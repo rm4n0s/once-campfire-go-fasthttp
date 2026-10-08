@@ -5,10 +5,10 @@ import (
 	"bytes"
 	"embed"
 	"encoding/json"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"html/template"
 	"io/fs"
 	"mime"
-	"net/http"
 	"path"
 	"strings"
 	"time"
@@ -55,7 +55,7 @@ func Public() fs.FS {
 	}
 	return f
 }
-func Serve(w http.ResponseWriter, r *http.Request) bool {
+func Serve(w httpx.ResponseWriter, r *httpx.Request) bool {
 	if r.Method != "GET" && r.Method != "HEAD" {
 		return false
 	}
@@ -80,6 +80,6 @@ func Serve(w http.ResponseWriter, r *http.Request) bool {
 		w.Header().Set("Content-Type", typ)
 	}
 	w.Header().Set("Cache-Control", "public, max-age=2592000")
-	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(body))
+	httpx.ServeContent(w, r, name, time.Time{}, bytes.NewReader(body))
 	return true
 }

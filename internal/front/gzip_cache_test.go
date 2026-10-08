@@ -5,9 +5,10 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/binary"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -91,7 +92,7 @@ func TestGzipCacheExactBytesConcurrentReuseAndBounds(t *testing.T) {
 
 func TestCompletedGzipPreservesPerRequestState(t *testing.T) {
 	cache := newGzipCache(gzipCacheBytes)
-	request := httptest.NewRequest("GET", "/", nil)
+	request := httpxtest.NewRequest("GET", "/", nil)
 	request.Header.Set("Accept-Encoding", "gzip")
 	first := []byte(strings.Repeat("private first body", 100))
 	second := []byte(strings.Repeat("private other body", 100))
@@ -101,7 +102,7 @@ func TestCompletedGzipPreservesPerRequestState(t *testing.T) {
 		{second, first, first}, {first, second, first}, {first, first, second},
 	} {
 		body := bytes.Join(data, nil)
-		response := httptest.NewRecorder()
+		response := httpxtest.NewRecorder()
 		w := &gzipResponse{ResponseWriter: response, request: request, selected: "gzip", cache: cache}
 		w.Header().Set("ETag", `W/"same-resource-version"`)
 		w.Header().Set("Cache-Control", "private, max-age=0")
@@ -120,8 +121,8 @@ func TestCompletedGzipPreservesPerRequestState(t *testing.T) {
 		t.Fatal("weak ETag reused a different body's gzip")
 	}
 	for _, test := range []struct{ method, control string }{{"GET", "no-store"}, {"POST", "private"}} {
-		request := httptest.NewRequest(test.method, "/", nil)
-		response := httptest.NewRecorder()
+		request := httpxtest.NewRequest(test.method, "/", nil)
+		response := httpxtest.NewRecorder()
 		w := &gzipResponse{ResponseWriter: response, request: request, selected: "gzip", cache: cache}
 		w.Header().Set("Cache-Control", test.control)
 		w.WriteHeader(200)
@@ -138,7 +139,7 @@ func TestCompletedGzipPreservesPerRequestState(t *testing.T) {
 
 func TestCompletedAndStreamingGzipLifecycles(t *testing.T) {
 	body := strings.Repeat("hello world", 200)
-	handler := Deflate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := Deflate(httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		if r.URL.Path == "/completed" {
 			w.WriteHeader(200)
@@ -154,9 +155,9 @@ func TestCompletedAndStreamingGzipLifecycles(t *testing.T) {
 		}
 	}))
 	for _, path := range []string{"/completed", "/stream", "/empty"} {
-		request := httptest.NewRequest("GET", path, nil)
+		request := httpxtest.NewRequest("GET", path, nil)
 		request.Header.Set("Accept-Encoding", "gzip")
-		response := httptest.NewRecorder()
+		response := httpxtest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		want := body
 		if path == "/empty" {
@@ -175,7 +176,7 @@ func TestCompletedAndStreamingGzipLifecycles(t *testing.T) {
 			t.Fatal("trailing gzip member", path)
 		}
 		request.Method = "HEAD"
-		response = httptest.NewRecorder()
+		response = httpxtest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		if response.Body.Len() != 0 {
 			t.Fatal("HEAD sent a body", path)

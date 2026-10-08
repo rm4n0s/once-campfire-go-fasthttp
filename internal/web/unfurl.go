@@ -2,11 +2,11 @@ package web
 
 import (
 	"github.com/basecamp/once-campfire-go/internal/database"
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"strings"
 )
 
-func (s *Server) unfurl(w http.ResponseWriter, r *http.Request, _ database.User) {
+func (s *Server) unfurl(w httpx.ResponseWriter, r *httpx.Request, _ database.User) {
 	value := r.Form.Get("url")
 	if strings.TrimSpace(value) == "" {
 		for key := range r.Form {
@@ -15,7 +15,7 @@ func (s *Server) unfurl(w http.ResponseWriter, r *http.Request, _ database.User)
 				return
 			}
 		}
-		http.Error(w, "url is required", 400)
+		httpx.Error(w, "url is required", 400)
 		return
 	}
 	body, err := s.Unfurler.Unfurl(r.Context(), value)

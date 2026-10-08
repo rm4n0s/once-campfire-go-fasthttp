@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"strings"
 	"testing"
 	"time"
@@ -19,13 +19,13 @@ func TestMessageConditionalGet(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := fmt.Sprintf("/rooms/%d/messages", rooms[0].ID)
-	request := func(headers map[string]string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest("GET", path, nil)
+	request := func(headers map[string]string) *httpxtest.Recorder {
+		r := httpxtest.NewRequest("GET", path, nil)
 		r.AddCookie(cookie)
 		for k, v := range headers {
 			r.Header.Set(k, v)
 		}
-		w := httptest.NewRecorder()
+		w := httpxtest.NewRecorder()
 		app.ServeHTTP(w, r)
 		return w
 	}
@@ -41,10 +41,10 @@ func TestMessageConditionalGet(t *testing.T) {
 			t.Fatal(w.Code, w.Body.String())
 		}
 	}
-	if w := request(map[string]string{"If-Modified-Since": time.Now().Add(24 * time.Hour).UTC().Format(http.TimeFormat)}); w.Code != 200 {
+	if w := request(map[string]string{"If-Modified-Since": time.Now().Add(24 * time.Hour).UTC().Format(httpx.TimeFormat)}); w.Code != 200 {
 		t.Fatal("date cannot validate associated presentation", w.Code)
 	}
-	w := request(map[string]string{"If-None-Match": "\"stale\"", "If-Modified-Since": time.Now().Add(24 * time.Hour).UTC().Format(http.TimeFormat)})
+	w := request(map[string]string{"If-None-Match": "\"stale\"", "If-Modified-Since": time.Now().Add(24 * time.Hour).UTC().Format(httpx.TimeFormat)})
 	if w.Code != 200 {
 		t.Fatal("ETag did not take precedence", w.Code)
 	}

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"strconv"
 	"sync"
 
@@ -24,7 +24,7 @@ func releaseBuffer(b *bytes.Buffer) {
 // Rack::ETag and Rack::ConditionalGet operate on completed, non-streaming bodies.
 // Disk/representation downloads and upgraded sockets retain their streaming writers.
 type responseBuffer struct {
-	http.ResponseWriter
+	httpx.ResponseWriter
 	body      *bytes.Buffer
 	status    int
 	exception bool
@@ -46,7 +46,7 @@ func (w *responseBuffer) Write(body []byte) (int, error) {
 	}
 	return w.body.Write(body)
 }
-func (w *responseBuffer) finish(r *http.Request) {
+func (w *responseBuffer) finish(r *httpx.Request) {
 	if w.body == nil {
 		w.body = borrowBuffer()
 	}
@@ -74,7 +74,7 @@ func (w *responseBuffer) finish(r *http.Request) {
 		h.Set("Cache-Control", value)
 	}
 	if w.status == 200 {
-		modified, _ := http.ParseTime(h.Get("Last-Modified"))
+		modified, _ := httpx.ParseTime(h.Get("Last-Modified"))
 		if notModified(w.ResponseWriter, r, h.Get("ETag"), modified) {
 			return
 		}

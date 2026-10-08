@@ -5,7 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -121,18 +122,38 @@ func (c *client) sendFrame(data *websocket.PreparedMessage) bool {
 		return false
 	}
 }
-func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, user database.User, token string) {
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{Subprotocols: []string{"actioncable-v1-json"}, CompressionMode: websocket.CompressionNoContextTakeover, CompressionThreshold: 256})
-	if err != nil {
+
+// Serve upgrades the request and, on the hijacked connection, runs the session
+// until the client leaves. The handler returns as soon as the upgrade is sent.
+func (h *Hub) Serve(w httpx.ResponseWriter, r *httpx.Request, user database.User, token string) {
+	header := map[string][]string{}
+	r.Header.Each(func(key, value string) { header[key] = append(header[key], value) })
+	handshake := websocket.NewServerHandshake(
+		websocket.ServerRequest{Method: r.Method, Host: r.Host, Header: header},
+		&websocket.AcceptOptions{Subprotocols: []string{"actioncable-v1-json"}, CompressionMode: websocket.CompressionNoContextTakeover, CompressionThreshold: 256},
+	)
+	for key, values := range handshake.Header {
+		w.Header().SetValues(key, values)
+	}
+	if handshake.Err != nil {
+		httpx.Error(w, handshake.Err.Error(), handshake.Status)
 		return
 	}
+	w.WriteHeader(handshake.Status)
+	ctx := r.Context()
+	if err := httpx.Hijack(w, func(connection net.Conn) { h.session(ctx, handshake.Conn(connection), user, token) }); err != nil {
+		httpx.Error(w, "Not Implemented", 501)
+	}
+}
+
+func (h *Hub) session(parent context.Context, conn *websocket.Conn, user database.User, token string) {
 	defer conn.CloseNow()
 	if conn.Subprotocol() != "actioncable-v1-json" {
 		conn.Close(websocket.StatusPolicyViolation, "unsupported protocol")
 		return
 	}
 	conn.SetReadLimit(1 << 20)
-	ctx, cancel := context.WithCancel(r.Context())
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	c := &client{disconnect: make(chan bool, 1), user: user, token: token, cancel: cancel, out: make(chan *websocket.PreparedMessage, 256), subscriptions: map[string]subscription{}}
 	h.mu.Lock()

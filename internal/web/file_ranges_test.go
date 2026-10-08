@@ -1,7 +1,7 @@
 package web
 
 import (
-	"net/http/httptest"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,9 +27,9 @@ func TestStorageFileRanges(t *testing.T) {
 			t.Fatal(err)
 		}
 		stat, _ := file.Stat()
-		r := httptest.NewRequest("GET", "/rails/active_storage/disk/token/file", nil)
+		r := httpxtest.NewRequest("GET", "/rails/active_storage/disk/token/file", nil)
 		r.Header.Set("Range", test.header)
-		w := httptest.NewRecorder()
+		w := httpxtest.NewRecorder()
 		w.Header().Set("Content-Type", "image/png")
 		serveStorageFile(w, r, file, stat, "image/png", test.proxy)
 		file.Close()
@@ -40,9 +40,9 @@ func TestStorageFileRanges(t *testing.T) {
 	file, _ := os.Open(path)
 	defer file.Close()
 	stat, _ := file.Stat()
-	r := httptest.NewRequest("GET", "/rails/active_storage/disk/token/file", nil)
+	r := httpxtest.NewRequest("GET", "/rails/active_storage/disk/token/file", nil)
 	r.Header.Set("Range", "bytes=0-1,3-4")
-	w := httptest.NewRecorder()
+	w := httpxtest.NewRecorder()
 	w.Header().Set("Content-Type", "image/png")
 	serveStorageFile(w, r, file, stat, "image/png", false)
 	if w.Code != 206 || w.Header().Get("Content-Type") != "image/png" || !strings.Contains(w.Body.String(), "--AaB03x\r\ncontent-type: text/plain\r\ncontent-range: bytes 0-1/10\r\n\r\n01") {

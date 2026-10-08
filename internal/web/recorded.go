@@ -3,7 +3,7 @@ package web
 import (
 	"context"
 	"fmt"
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"strings"
 
 	"github.com/basecamp/once-campfire-go/internal/database"
@@ -56,17 +56,17 @@ func (s *Server) searchMessageList(ctx context.Context, user int64, query string
 	return part, len(messages), err
 }
 
-func writeRecorded(w http.ResponseWriter, status int, rendered, marker string, part responsebody.Part) {
+func writeRecorded(w httpx.ResponseWriter, status int, rendered, marker string, part responsebody.Part) {
 	before, after, found := strings.Cut(rendered, marker)
 	if !found {
-		http.Error(w, "Missing message insertion point", 500)
+		httpx.Error(w, "Missing message insertion point", 500)
 		return
 	}
 	parts := []responsebody.Part{responsebody.NewPart([]byte(before)), part, responsebody.NewPart([]byte(after))}
 	writeParts(w, status, parts)
 }
 
-func writeParts(w http.ResponseWriter, status int, parts []responsebody.Part) {
+func writeParts(w httpx.ResponseWriter, status int, parts []responsebody.Part) {
 	if w.Header().Get("ETag") == "" {
 		digest := responsebody.Digest(parts)
 		w.Header().Set("ETag", fmt.Sprintf("W/\"%x\"", digest[:16]))
@@ -84,7 +84,7 @@ func writeParts(w http.ResponseWriter, status int, parts []responsebody.Part) {
 			buffered.parts = parts
 			return
 		}
-		if wrapper, ok := target.(interface{ Unwrap() http.ResponseWriter }); ok {
+		if wrapper, ok := target.(interface{ Unwrap() httpx.ResponseWriter }); ok {
 			target = wrapper.Unwrap()
 		} else {
 			break

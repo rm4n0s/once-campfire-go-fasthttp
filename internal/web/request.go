@@ -2,8 +2,8 @@ package web
 
 import (
 	"errors"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"net"
-	"net/http"
 	"net/netip"
 	"slices"
 	"strings"
@@ -44,7 +44,7 @@ func authorityAddress(value string) string {
 	}
 	return value
 }
-func requestRemoteIP(r *http.Request) (string, error) {
+func requestRemoteIP(r *httpx.Request) (string, error) {
 	parse := func(values []string, authority bool) []netip.Addr {
 		var ips []netip.Addr
 		for _, value := range values {
@@ -85,9 +85,9 @@ func requestRemoteIP(r *http.Request) (string, error) {
 	}
 	return "", nil
 }
-func remoteIP(r *http.Request) string { ip, _ := requestRemoteIP(r); return ip }
+func remoteIP(r *httpx.Request) string { ip, _ := requestRemoteIP(r); return ip }
 
-func (s *Server) requestHTTPS(r *http.Request) bool {
+func (s *Server) requestHTTPS(r *httpx.Request) bool {
 	if s.Secure || r.Header.Get("X-Forwarded-Ssl") == "on" {
 		return true
 	}
@@ -113,7 +113,7 @@ func (s *Server) requestHTTPS(r *http.Request) bool {
 	}
 	return r.TLS != nil || r.URL.Scheme == "https"
 }
-func (s *Server) origin(r *http.Request) string {
+func (s *Server) origin(r *httpx.Request) string {
 	scheme, standardPort := "http", "80"
 	if s.requestHTTPS(r) {
 		scheme, standardPort = "https", "443"

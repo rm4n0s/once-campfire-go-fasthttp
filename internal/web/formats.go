@@ -1,13 +1,13 @@
 package web
 
 import (
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"strings"
 
 	"github.com/basecamp/once-campfire-go/internal/httpcompat"
 )
 
-func formatInput(r *http.Request) httpcompat.FormatInput {
+func formatInput(r *httpx.Request) httpcompat.FormatInput {
 	var format *string
 	if value := r.PathValue("format"); value != "" {
 		format = &value
@@ -17,15 +17,15 @@ func formatInput(r *http.Request) httpcompat.FormatInput {
 	}
 	return httpcompat.FormatInput{Format: format, Accept: r.Header.Get("Accept"), ContentType: r.Header.Get("Content-Type"), Path: r.URL.Path, XHR: r.Header.Get("X-Requested-With") == "XMLHttpRequest"}
 }
-func respondFormat(w http.ResponseWriter, r *http.Request, available ...string) string {
+func respondFormat(w httpx.ResponseWriter, r *httpx.Request, available ...string) string {
 	input := formatInput(r)
 	format, err := httpcompat.Negotiate(input, available...)
 	if err != nil {
-		http.Error(w, "Invalid MIME type", 400)
+		httpx.Error(w, "Invalid MIME type", 400)
 		return ""
 	}
 	if format == "" {
-		http.Error(w, "Not acceptable", 406)
+		httpx.Error(w, "Not acceptable", 406)
 		return ""
 	}
 	if input.UsesAccept() {

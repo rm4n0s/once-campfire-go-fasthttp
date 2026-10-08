@@ -6,8 +6,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"mime/multipart"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -124,8 +124,8 @@ func TestBoostIDIsNotInterpretedAsRoomID(t *testing.T) {
 }
 
 func TestEmptyMessageUpdateRequiresParameter(t *testing.T) {
-	r := httptest.NewRequest("PATCH", "/messages/1", nil)
-	w := httptest.NewRecorder()
+	r := httpxtest.NewRequest("PATCH", "/messages/1", nil)
+	w := httpxtest.NewRecorder()
 	if requireMessage(w, r) || w.Code != 400 {
 		t.Fatal(w.Code)
 	}

@@ -1,0 +1,65 @@
+once-campfire-go (fasthttp port)
+Copyright (c) 37signals, LLC
+Copyright (c) 2026 Manos Ragiadakos
+
+This product is licensed under the MIT License; see MIT-LICENSE.
+
+It is a Go port of Campfire and is derived from the work of 37signals, LLC:
+
+  - Campfire (Rails) and its Rust port, once-campfire-rust, which is pinned
+    as the submodule in reference/. Behavior, the SQLite schema, storage
+    layout, cookies, test vectors, and the frontend are taken from it.
+    https://github.com/basecamp/once-campfire-rust
+    MIT License, Copyright (c) 37signals, LLC.
+
+  - The Campfire frontend that the binary embeds from the reference vendor
+    tree (Turbo, Stimulus, Action Cable, Action Text/Trix, Lexxy, Active
+    Storage, and related JavaScript, CSS, and images), each under its own
+    license in reference/crates/assets/vendor/. These files are generated
+    into assets/generated/ at build time and are not stored in this
+    repository.
+
+This distribution includes or adapts the following third-party software.
+Each is used under its own license, and its copyright notice and license
+text are retained as noted.
+
+Bundled or adapted source in this repository:
+
+  - third_party/websocket: based on github.com/coder/websocket v1.8.15.
+    ISC-style license, Copyright (c) 2025 Coder.
+    Campfire's changes (prepared.go, handshake.go) are described in
+    third_party/websocket/README.campfire. License text:
+    third_party/websocket/LICENSE.txt
+
+  - internal/html: a copy of golang.org/x/net/html v0.59.0 with compatibility
+    changes (see internal/html/origin.go).
+    BSD 3-Clause, Copyright 2009 The Go Authors.
+    License text: internal/html/LICENSE
+
+  - internal/web/emoji.go: Unicode tables taken from the Rust regex-syntax
+    0.8.11 crate. MIT License, Copyright (c) 2014 The Rust Project Developers.
+    License text: licenses/regex-syntax-MIT.txt
+
+  - internal/qrcode: a port of rqrcode_core 2.1.0 and rqrcode 3.2.0 (tables
+    and algorithm choices). MIT License, Copyright (c) 2008 Duncan Robertson.
+    License text: licenses/rqrcode-MIT.txt
+
+Go module dependencies (linked into the binary; see go.mod for versions):
+
+  - github.com/valyala/fasthttp          MIT, Aliaksandr Valialkin, VertaMedia,
+                                         Kirill Danshin, Erik Dubbelboer,
+                                         FastHTTP Authors
+  - github.com/valyala/bytebufferpool    MIT, Aliaksandr Valialkin, VertaMedia
+  - github.com/klauspost/compress        BSD 3-Clause (with Apache-2.0 and MIT
+                                         parts), The Go Authors, Klaus Post
+  - github.com/molecule-man/go-brrr      MIT, Andrii Berezhynskyi
+  - github.com/mattn/go-sqlite3          MIT, Yasuhiro Matsumoto
+                                         (embeds the SQLite amalgamation,
+                                         which is in the public domain)
+  - golang.org/x/crypto                  BSD 3-Clause, The Go Authors
+  - golang.org/x/net                     BSD 3-Clause, The Go Authors
+  - golang.org/x/text                    BSD 3-Clause, The Go Authors
+
+Binary distributions must include the license texts of these dependencies.
+They are available in each module's source (for example, with
+"go mod download -json") or in the module cache.

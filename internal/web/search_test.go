@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net/http/httptest"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"regexp"
 	"strconv"
 	"testing"
@@ -61,8 +61,8 @@ func TestSearchMissRetainsQueryBodySnapshot(t *testing.T) {
 	if err := app.DB.DeleteMessage(ctx, user.ID, second.ID); err != nil {
 		t.Fatal(err)
 	}
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/searches?q=snapshotneedle", nil)
+	w := httpxtest.NewRecorder()
+	r := httpxtest.NewRequest("GET", "/searches?q=snapshotneedle", nil)
 	writer, r := app.withBrowserSession(w, r)
 	app.render(writer, r, "search", 200, page{User: user, Query: "snapshotneedle", SearchResultCount: 1, messageBody: &retained})
 	if w.Code != 200 || !bytes.Contains(w.Body.Bytes(), body(retained)) {

@@ -3,7 +3,7 @@ package web
 import (
 	"errors"
 	"github.com/basecamp/once-campfire-go/internal/database"
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"net/url"
 	"regexp"
 	"strings"
@@ -98,14 +98,14 @@ func init() {
 		contracts[i].bot = strings.Contains(contracts[i].Pattern, ":bot_key")
 	}
 }
-func (s *Server) routeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *Server) routeHTTP(w httpx.ResponseWriter, r *httpx.Request) {
 	if r.URL.Path == "/cable" {
 		s.mux.ServeHTTP(w, r)
 		return
 	}
 	route, params, err := recognize(r.Method, r.URL.EscapedPath())
 	if err != nil {
-		http.Error(w, "Invalid path parameters", 400)
+		httpx.Error(w, "Invalid path parameters", 400)
 		return
 	}
 	if route == nil || route.Action == "action_not_found" {
@@ -145,7 +145,7 @@ func (s *Server) routeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if route.Action == "rooms::destroy_without_room" || route.Action == "rooms::directs::show" {
-		s.auth(func(w http.ResponseWriter, r *http.Request, _ database.User) {
+		s.auth(func(w httpx.ResponseWriter, r *httpx.Request, _ database.User) {
 			publicError(w, r, 500)
 		})(w, r)
 		return

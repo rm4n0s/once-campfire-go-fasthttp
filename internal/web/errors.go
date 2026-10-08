@@ -2,8 +2,8 @@ package web
 
 import (
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"io/fs"
-	"net/http"
 	"strconv"
 
 	"github.com/basecamp/once-campfire-go/assets"
@@ -11,7 +11,7 @@ import (
 )
 
 // ActionDispatch::PublicExceptions serves the public page or a serialized status.
-func publicError(w http.ResponseWriter, r *http.Request, status int) {
+func publicError(w httpx.ResponseWriter, r *httpx.Request, status int) {
 	if session, ok := w.(*sessionWriter); ok {
 		if buffered, ok := session.ResponseWriter.(*responseBuffer); ok {
 			buffered.exception = true
@@ -25,7 +25,7 @@ func publicError(w http.ResponseWriter, r *http.Request, status int) {
 	if len(formats) > 0 {
 		format = formats[0]
 	}
-	reason := http.StatusText(status)
+	reason := httpx.StatusText(status)
 	if status == 422 {
 		reason = "Unprocessable Content"
 	}

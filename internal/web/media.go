@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"hash/crc32"
 	"html"
 	"io/fs"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -25,10 +25,10 @@ func (s *Server) registerMediaRoutes() {
 	s.mux.HandleFunc("GET /account/logo", s.browserCheck(s.logo))
 	s.mux.HandleFunc("DELETE /account/logo", s.auth(s.deleteLogo))
 }
-func (s *Server) avatar(w http.ResponseWriter, r *http.Request, _ database.User) {
+func (s *Server) avatar(w httpx.ResponseWriter, r *httpx.Request, _ database.User) {
 	id, err := s.Secrets.VerifyID("User", r.PathValue("token"), "avatar", s.DB.Now())
 	if err != nil {
-		http.NotFound(w, r)
+		httpx.NotFound(w, r)
 		return
 	}
 	user, err := s.DB.User(r.Context(), id)
@@ -84,7 +84,7 @@ func (s *Server) avatar(w http.ResponseWriter, r *http.Request, _ database.User)
 
 `, color, fit, html.EscapeString(string(initials)))
 }
-func (s *Server) serveVariant(w http.ResponseWriter, r *http.Request, kind string, id int64, name string, size int64, format string) bool {
+func (s *Server) serveVariant(w httpx.ResponseWriter, r *httpx.Request, kind string, id int64, name string, size int64, format string) bool {
 	b, err := s.Storage.Attached(r.Context(), kind, id, name)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false
@@ -109,7 +109,7 @@ func (s *Server) serveVariant(w http.ResponseWriter, r *http.Request, kind strin
 	s.serveStored(w, r, path, b.Type(), storage.Disposition("inline", storage.Filename(b.Filename)), true)
 	return true
 }
-func (s *Server) serveAsset(w http.ResponseWriter, r *http.Request, name, ct string) {
+func (s *Server) serveAsset(w httpx.ResponseWriter, r *httpx.Request, name, ct string) {
 	data, err := fs.ReadFile(assets.Public(), strings.TrimPrefix(assets.Path(name), "/"))
 	if err != nil {
 		s.fail(w, err)
@@ -117,9 +117,9 @@ func (s *Server) serveAsset(w http.ResponseWriter, r *http.Request, name, ct str
 	}
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Content-Disposition", storage.Disposition("inline", name[strings.LastIndex(name, "/")+1:]))
-	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
+	httpx.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
 }
-func (s *Server) logo(w http.ResponseWriter, r *http.Request) {
+func (s *Server) logo(w httpx.ResponseWriter, r *httpx.Request) {
 	a, err := s.DB.Account(r.Context())
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		s.fail(w, err)
@@ -137,14 +137,14 @@ func (s *Server) logo(w http.ResponseWriter, r *http.Request) {
 	}
 	s.serveAsset(w, r, asset, "image/png")
 }
-func (s *Server) deleteAvatar(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) deleteAvatar(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	if err := s.Storage.Detach(r.Context(), "User", u.ID, "avatar"); err != nil {
 		s.fail(w, err)
 		return
 	}
-	http.Redirect(w, r, "/users/me/profile", 302)
+	httpx.Redirect(w, r, "/users/me/profile", 302)
 }
-func (s *Server) deleteLogo(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) deleteLogo(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	if !administrator(w, u) {
 		return
 	}
@@ -157,5 +157,5 @@ func (s *Server) deleteLogo(w http.ResponseWriter, r *http.Request, u database.U
 		s.fail(w, err)
 		return
 	}
-	http.Redirect(w, r, "/account/edit", 302)
+	httpx.Redirect(w, r, "/account/edit", 302)
 }

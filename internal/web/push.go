@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"log/slog"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -61,7 +61,7 @@ func (s *Server) initJobs() {
 	)
 }
 
-func subscriptionParams(r *http.Request) (map[string]*string, error) {
+func subscriptionParams(r *httpx.Request) (map[string]*string, error) {
 	attrs := map[string]*string{}
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		var raw map[string]json.RawMessage
@@ -104,7 +104,7 @@ func subscriptionParams(r *http.Request) (map[string]*string, error) {
 	return attrs, nil
 }
 
-func (s *Server) pushSubscriptions(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) pushSubscriptions(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	if r.Method == "GET" || r.Method == "HEAD" {
 		list, err := s.DB.PushSubscriptions(r.Context(), u.ID)
 		if err != nil {
@@ -122,7 +122,7 @@ func (s *Server) pushSubscriptions(w http.ResponseWriter, r *http.Request, u dat
 	}
 	attrs, err := subscriptionParams(r)
 	if err != nil {
-		http.Error(w, err.Error(), 400)
+		httpx.Error(w, err.Error(), 400)
 		return
 	}
 	existing, err := s.DB.FindPushSubscription(r.Context(), u.ID, attrs)
@@ -152,13 +152,13 @@ func (s *Server) pushSubscriptions(w http.ResponseWriter, r *http.Request, u dat
 	w.WriteHeader(200)
 }
 
-func (s *Server) deletePushSubscription(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) deletePushSubscription(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	id, _ := strconv.ParseInt(r.PathValue("subscription"), 10, 64)
 	if err := s.DB.DeletePushSubscription(r.Context(), u.ID, id); err != nil {
 		s.fail(w, err)
 		return
 	}
-	http.Redirect(w, r, s.origin(r)+pushPath, 302)
+	httpx.Redirect(w, r, s.origin(r)+pushPath, 302)
 }
 
 func notificationJSON(title, body, path string, badge int64) []byte {
@@ -190,7 +190,7 @@ func notificationJSON(title, body, path string, badge int64) []byte {
 	return encoded
 }
 
-func (s *Server) testPushNotification(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) testPushNotification(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	id, _ := strconv.ParseInt(r.PathValue("subscription"), 10, 64)
 	subscription, err := s.DB.PushSubscription(r.Context(), u.ID, id)
 	if err != nil {
@@ -213,7 +213,7 @@ func (s *Server) testPushNotification(w http.ResponseWriter, r *http.Request, u 
 		s.fail(w, err)
 		return
 	}
-	http.Redirect(w, r, s.origin(r)+pushPath, 302)
+	httpx.Redirect(w, r, s.origin(r)+pushPath, 302)
 }
 
 func (s *Server) messageCreated(message database.Message, room database.Room) {

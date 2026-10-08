@@ -6,9 +6,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -18,14 +18,14 @@ import (
 	"github.com/basecamp/once-campfire-go/internal/responsebody"
 )
 
-func cachedRequest(t *testing.T, app *Server, cookie *http.Cookie, method, path string, headers map[string]string) *httptest.ResponseRecorder {
+func cachedRequest(t *testing.T, app *Server, cookie *httpx.Cookie, method, path string, headers map[string]string) *httpxtest.Recorder {
 	t.Helper()
-	request := httptest.NewRequest(method, "http://cache.test"+path, nil)
+	request := httpxtest.NewRequest(method, "http://cache.test"+path, nil)
 	request.AddCookie(cookie)
 	for name, value := range headers {
 		request.Header.Set(name, value)
 	}
-	writer := httptest.NewRecorder()
+	writer := httpxtest.NewRecorder()
 	front.Deflate(app).ServeHTTP(writer, request)
 	return writer
 }
@@ -137,14 +137,14 @@ func TestResponseCacheRechecksIdentityAndReachability(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := fmt.Sprintf("/rooms/%d", room.ID)
-	request := func(c *http.Cookie) *httptest.ResponseRecorder { return cachedRequest(t, app, c, "GET", path, nil) }
+	request := func(c *httpx.Cookie) *httpxtest.Recorder { return cachedRequest(t, app, c, "GET", path, nil) }
 	request(cookie)
 	memberToken, err := app.DB.StartSession(ctx, member.ID, "member", "127.0.0.1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	memberRaw, _ := app.Secrets.SignCookie("session_token", memberToken, time.Now().Add(time.Hour))
-	memberCookie := &http.Cookie{Name: "session_token", Value: rails.EscapeCookie(memberRaw)}
+	memberCookie := &httpx.Cookie{Name: "session_token", Value: rails.EscapeCookie(memberRaw)}
 	memberPage := request(memberCookie)
 	if !strings.Contains(memberPage.Body.String(), fmt.Sprintf(`<meta name="current-user-id" content="%d">`, member.ID)) {
 		t.Fatal("another user's cached layout leaked")
@@ -159,7 +159,7 @@ func TestResponseCacheRechecksIdentityAndReachability(t *testing.T) {
 		t.Fatal(err)
 	}
 	signed, _ := app.Secrets.SignCookie("session_token", token, time.Now().Add(time.Hour))
-	other := &http.Cookie{Name: "session_token", Value: rails.EscapeCookie(signed)}
+	other := &httpx.Cookie{Name: "session_token", Value: rails.EscapeCookie(signed)}
 	request(other)
 	before = cacheHits(app)
 	if request(other).Code != 200 || cacheHits(app) != before+1 {
@@ -170,7 +170,7 @@ func TestResponseCacheRechecksIdentityAndReachability(t *testing.T) {
 		t.Fatal(err)
 	}
 	expiredRaw, _ := app.Secrets.SignCookie("session_token", token, time.Now().Add(-time.Second))
-	if request(&http.Cookie{Name: "session_token", Value: rails.EscapeCookie(expiredRaw)}).Code != 302 {
+	if request(&httpx.Cookie{Name: "session_token", Value: rails.EscapeCookie(expiredRaw)}).Code != 302 {
 		t.Fatal("expired cookie served cached page")
 	}
 	foreign := foreignWriter(t, app)
@@ -208,10 +208,10 @@ func TestResponseCacheForeignChangesFlashAndForgery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest("GET", "http://cache.test"+path, nil)
+	request := httpxtest.NewRequest("GET", "http://cache.test"+path, nil)
 	request.AddCookie(cookie)
-	request.AddCookie(&http.Cookie{Name: browserSessionCookie, Value: rails.EscapeCookie(raw)})
-	writer := httptest.NewRecorder()
+	request.AddCookie(&httpx.Cookie{Name: browserSessionCookie, Value: rails.EscapeCookie(raw)})
+	writer := httpxtest.NewRecorder()
 	front.Deflate(app).ServeHTTP(writer, request)
 	if !strings.Contains(writer.Body.String(), "one-time cache notice") || cacheEntries(app) != before {
 		t.Fatal("flash cached or missing")
@@ -219,12 +219,12 @@ func TestResponseCacheForeignChangesFlashAndForgery(t *testing.T) {
 	if strings.Contains(cachedRequest(t, app, cookie, "GET", path, nil).Body.String(), "one-time cache notice") {
 		t.Fatal("one-time flash leaked")
 	}
-	request = httptest.NewRequest("POST", fmt.Sprintf("http://cache.test/rooms/%d/messages", rooms[0].ID), strings.NewReader("message[body]=forged"))
+	request = httpxtest.NewRequest("POST", fmt.Sprintf("http://cache.test/rooms/%d/messages", rooms[0].ID), strings.NewReader("message[body]=forged"))
 	request.AddCookie(cookie)
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	request.Header.Set("Origin", "https://attacker.test")
 	request.Header.Set("Sec-Fetch-Site", "cross-site")
-	writer = httptest.NewRecorder()
+	writer = httpxtest.NewRecorder()
 	app.ServeHTTP(writer, request)
 	if writer.Code != 422 {
 		t.Fatal("cached GET bypassed forgery protection", writer.Code)
@@ -232,10 +232,10 @@ func TestResponseCacheForeignChangesFlashAndForgery(t *testing.T) {
 }
 func TestResponseCacheDoesNotAdmitAConcurrentCommit(t *testing.T) {
 	app, _, cookie, user := testApp(t)
-	request := httptest.NewRequest("GET", "http://cache.test/rooms/1", nil)
+	request := httpxtest.NewRequest("GET", "http://cache.test/rooms/1", nil)
 	request.AddCookie(cookie)
 	request = request.WithContext(context.WithValue(request.Context(), requestInfoKey{}, &requestInfo{host: request.Host, origin: app.origin(request)}))
-	writer := httptest.NewRecorder()
+	writer := httpxtest.NewRecorder()
 	buffer := &responseBuffer{ResponseWriter: writer, server: app}
 	session, request := app.withBrowserSession(buffer, request)
 	app.beginResponseCache(request)
@@ -347,9 +347,9 @@ func TestNestedMessageCachePreservesRequestHostFiltering(t *testing.T) {
 	}
 	for _, endpoint := range []string{fmt.Sprintf("/rooms/%d", rooms[0].ID), fmt.Sprintf("/rooms/%d/messages", rooms[0].ID)} {
 		for _, host := range []string{"same.example", "other.example", "same.example", "other.example"} {
-			request := httptest.NewRequest("GET", "http://"+host+endpoint, nil)
+			request := httpxtest.NewRequest("GET", "http://"+host+endpoint, nil)
 			request.AddCookie(cookie)
-			response := httptest.NewRecorder()
+			response := httpxtest.NewRecorder()
 			front.Deflate(app).ServeHTTP(response, request)
 			if response.Code != 200 || strings.Contains(response.Body.String(), `href="https://same.example/story"`) != (host != "same.example") {
 				t.Fatal("stale host-scoped message fragment", host, response.Code, response.Body.String())

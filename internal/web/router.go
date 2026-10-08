@@ -1,7 +1,7 @@
 package web
 
 import (
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"net/url"
 	"regexp"
 	"strings"
@@ -15,10 +15,10 @@ type route struct {
 	method  string
 	pattern *regexp.Regexp
 	names   []string
-	handler http.HandlerFunc
+	handler httpx.HandlerFunc
 }
 
-func (m *router) HandleFunc(pattern string, handler http.HandlerFunc) {
+func (m *router) HandleFunc(pattern string, handler httpx.HandlerFunc) {
 	method, path, _ := strings.Cut(pattern, " ")
 	parts := strings.Split(path, "/")
 	names := []string{}
@@ -40,7 +40,7 @@ func (m *router) HandleFunc(pattern string, handler http.HandlerFunc) {
 	}
 	m.routes = append(m.routes, route{method, regexp.MustCompile("^" + strings.Join(parts, "/") + "$"), names, handler})
 }
-func (m *router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (m *router) ServeHTTP(w httpx.ResponseWriter, r *httpx.Request) {
 	for _, route := range m.routes {
 		if route.method != r.Method && !(r.Method == "HEAD" && route.method == "GET") {
 			continue
@@ -52,7 +52,7 @@ func (m *router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for i, name := range route.names {
 			value, err := url.PathUnescape(values[i+1])
 			if err != nil {
-				http.Error(w, "Invalid path", 400)
+				httpx.Error(w, "Invalid path", 400)
 				return
 			}
 			r.SetPathValue(name, value)
@@ -60,5 +60,5 @@ func (m *router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		route.handler(w, r)
 		return
 	}
-	http.NotFound(w, r)
+	httpx.NotFound(w, r)
 }

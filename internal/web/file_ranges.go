@@ -6,20 +6,20 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/basecamp/once-campfire-go/internal/httpcompat"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"io"
-	"net/http"
 	"os"
 	"strconv"
 	"time"
 )
 
-func serveStorageFile(w http.ResponseWriter, r *http.Request, file *os.File, stat os.FileInfo, ct string, proxy bool) {
+func serveStorageFile(w httpx.ResponseWriter, r *httpx.Request, file *os.File, stat os.FileInfo, ct string, proxy bool) {
 	size := stat.Size()
 	if proxy && r.Header.Get("Range") != "" {
 		w.Header().Set("Cache-Control", "no-cache")
 	}
 	if !proxy {
-		modified := stat.ModTime().UTC().Format(http.TimeFormat)
+		modified := stat.ModTime().UTC().Format(httpx.TimeFormat)
 		// Rack compares the literal date and ignores If-None-Match and If-Range.
 		if r.Header.Get("If-Modified-Since") == modified {
 			w.WriteHeader(304)
@@ -31,7 +31,7 @@ func serveStorageFile(w http.ResponseWriter, r *http.Request, file *os.File, sta
 		hash := sha256.Sum256([]byte(r.URL.RequestURI()))
 		etag := fmt.Sprintf("W/\"%x\"", hash[:16])
 		w.Header().Set("ETag", etag)
-		w.Header().Set("Last-Modified", modified.Format(http.TimeFormat))
+		w.Header().Set("Last-Modified", modified.Format(httpx.TimeFormat))
 		if notModified(w, r, etag, modified) {
 			return
 		}
@@ -61,7 +61,7 @@ func serveStorageFile(w http.ResponseWriter, r *http.Request, file *os.File, sta
 		}
 		w.WriteHeader(200)
 		if r.Method != "HEAD" {
-			io.CopyN(w, file, size)
+			httpx.CopyN(w, file, size)
 		}
 		return
 	}
@@ -74,7 +74,7 @@ func serveStorageFile(w http.ResponseWriter, r *http.Request, file *os.File, sta
 		w.Header().Set("Content-Length", strconv.FormatInt(end-start+1, 10))
 		w.WriteHeader(206)
 		if r.Method != "HEAD" {
-			io.CopyN(w, io.NewSectionReader(file, start, end-start+1), end-start+1)
+			httpx.CopyN(w, io.NewSectionReader(file, start, end-start+1), end-start+1)
 		}
 		return
 	}
@@ -84,7 +84,7 @@ func serveStorageFile(w http.ResponseWriter, r *http.Request, file *os.File, sta
 	if proxy {
 		var random [16]byte
 		if _, err := rand.Read(random[:]); err != nil {
-			http.Error(w, "Internal server error", 500)
+			httpx.Error(w, "Internal server error", 500)
 			return
 		}
 		boundary = hex.EncodeToString(random[:])

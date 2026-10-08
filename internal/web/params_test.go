@@ -3,10 +3,10 @@ package web
 import (
 	"bytes"
 	"errors"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"io"
 	"mime/multipart"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -14,7 +14,7 @@ import (
 
 func TestJSONParametersKeepRawBodyAndQueryPrecedence(t *testing.T) {
 	raw := `{"message":{"body":null,"attachment":null},"room_id":42,"ids":[1,2]}`
-	r := httptest.NewRequest("PATCH", "/messages/1?room_id=17", strings.NewReader(raw))
+	r := httpxtest.NewRequest("PATCH", "/messages/1?room_id=17", strings.NewReader(raw))
 	r.Header.Set("Content-Type", "application/json; charset=utf-8")
 	if err := r.ParseForm(); err != nil {
 		t.Fatal(err)
@@ -30,7 +30,7 @@ func TestJSONParametersKeepRawBodyAndQueryPrecedence(t *testing.T) {
 		t.Fatalf("raw body: %q", body)
 	}
 	for _, raw := range []string{`{"broken":`, `{} {}`} {
-		r := httptest.NewRequest("POST", "/", strings.NewReader(raw))
+		r := httpxtest.NewRequest("POST", "/", strings.NewReader(raw))
 		r.Header.Set("Content-Type", "application/json")
 		r.ParseForm()
 		if err := parseJSONParams(r); err == nil {
@@ -46,7 +46,7 @@ func TestMultipartSpoolsLargeFilesAndRemovesTemporaryFiles(t *testing.T) {
 	io.CopyN(part, &zeroReader{}, MaxBody+1)
 	writer.WriteField("title", "report")
 	writer.Close()
-	r := httptest.NewRequest("POST", "/?title=query", &body)
+	r := httpxtest.NewRequest("POST", "/?title=query", &body)
 	r.Header.Set("Content-Type", writer.FormDataContentType())
 	cleanup, err := parseMultipart(r, multipartBoundary(r))
 	defer cleanup()
@@ -83,11 +83,11 @@ func TestMultipartTextLimitCleansEarlierFiles(t *testing.T) {
 	part, _ = writer.CreateFormField("body")
 	io.CopyN(part, &zeroReader{}, MaxBody+1)
 	writer.Close()
-	r := httptest.NewRequest("POST", "/", &body)
+	r := httpxtest.NewRequest("POST", "/", &body)
 	r.Header.Set("Content-Type", writer.FormDataContentType())
 	cleanup, err := parseMultipart(r, multipartBoundary(r))
 	cleanup()
-	var limit *http.MaxBytesError
+	var limit *httpx.MaxBytesError
 	if !errors.As(err, &limit) {
 		t.Fatal(err)
 	}

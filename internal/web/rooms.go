@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"strconv"
 	"strings"
 
@@ -30,15 +30,15 @@ func (s *Server) registerRoomRoutes() {
 	s.mux.HandleFunc("PUT /rooms/{id}/involvement", s.auth(s.involvement))
 	s.mux.HandleFunc("GET /rooms/{id}/{anchor}", s.auth(s.roomAt))
 }
-func (s *Server) roomLookupFailure(w http.ResponseWriter, r *http.Request, err error) {
+func (s *Server) roomLookupFailure(w httpx.ResponseWriter, r *httpx.Request, err error) {
 	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, database.ErrForbidden) {
 		s.flash(r, "alert", "Room not found or inaccessible")
-		http.Redirect(w, r, "/", http.StatusFound)
+		httpx.Redirect(w, r, "/", httpx.StatusFound)
 	} else {
 		s.fail(w, err)
 	}
 }
-func namespaceKind(r *http.Request) string {
+func namespaceKind(r *httpx.Request) string {
 	switch strings.Split(r.URL.Path, "/")[2] {
 	case "closeds":
 		return "Rooms::Closed"
@@ -48,7 +48,7 @@ func namespaceKind(r *http.Request) string {
 		return "Rooms::Open"
 	}
 }
-func roomUsers(r *http.Request) []int64 {
+func roomUsers(r *httpx.Request) []int64 {
 	var ids []int64
 	for _, value := range append(r.Form["user_ids[]"], r.Form["user_ids"]...) {
 		if id, err := strconv.ParseInt(value, 10, 64); err == nil {
@@ -70,7 +70,7 @@ func (s *Server) canCreateRoom(ctx context.Context, u database.User, kind string
 	}
 	return nil
 }
-func (s *Server) roomForm(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) roomForm(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	kind := namespaceKind(r)
 	room := database.Room{Type: kind, CreatorID: u.ID, Name: "New room"}
 	var err error
@@ -142,7 +142,7 @@ func (s *Server) roomForm(w http.ResponseWriter, r *http.Request, u database.Use
 	}
 	s.render(w, r, "room-form", 200, page{UserDivider: divider, Title: "Room settings", User: u, Room: room, Users: users, Selected: selected, CanAdminister: room.ID == 0 || u.Role == 1 || room.CreatorID == u.ID || kind == "Rooms::Direct"})
 }
-func (s *Server) saveRoom(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) saveRoom(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	kind := namespaceKind(r)
 	id := roomID(r)
 	updating := id != 0
@@ -186,9 +186,9 @@ func (s *Server) saveRoom(w http.ResponseWriter, r *http.Request, u database.Use
 		s.fail(w, err)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/rooms/%d", id), 302)
+	httpx.Redirect(w, r, fmt.Sprintf("/rooms/%d", id), 302)
 }
-func (s *Server) redirectRoom(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) redirectRoom(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	room, err := s.DB.Room(r.Context(), u.ID, roomID(r))
 	if err != nil {
 		s.roomLookupFailure(w, r, err)
@@ -198,9 +198,9 @@ func (s *Server) redirectRoom(w http.ResponseWriter, r *http.Request, u database
 		s.roomLookupFailure(w, r, sql.ErrNoRows)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/rooms/%d", room.ID), 302)
+	httpx.Redirect(w, r, fmt.Sprintf("/rooms/%d", room.ID), 302)
 }
-func (s *Server) deleteRoom(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) deleteRoom(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	room, err := s.DB.Room(r.Context(), u.ID, roomID(r))
 	if err != nil {
 		s.roomLookupFailure(w, r, err)
@@ -220,9 +220,9 @@ func (s *Server) deleteRoom(w http.ResponseWriter, r *http.Request, u database.U
 		return
 	}
 	s.Cable.PublishStream(r.Context(), "rooms", stream("remove", room.DOM("list"), ""))
-	http.Redirect(w, r, "/", 302)
+	httpx.Redirect(w, r, "/", 302)
 }
-func (s *Server) involvement(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) involvement(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	room, err := s.DB.Room(r.Context(), u.ID, roomID(r))
 	if err != nil {
 		s.fail(w, err)
@@ -251,7 +251,7 @@ func (s *Server) involvement(w http.ResponseWriter, r *http.Request, u database.
 				s.Cable.PublishStream(r.Context(), rails.UserRoomsStream(u.ID), stream("prepend", "shared_rooms", markup))
 			}
 		}
-		http.Redirect(w, r, fmt.Sprintf("/rooms/%d/involvement", room.ID), 302)
+		httpx.Redirect(w, r, fmt.Sprintf("/rooms/%d/involvement", room.ID), 302)
 		return
 	}
 	value, err := s.DB.Involvement(r.Context(), u.ID, room.ID)
@@ -261,19 +261,19 @@ func (s *Server) involvement(w http.ResponseWriter, r *http.Request, u database.
 	}
 	s.render(w, r, "involvement", 200, page{User: u, Room: room, Involvement: value})
 }
-func (s *Server) roomAt(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) roomAt(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	if !strings.HasPrefix(r.PathValue("anchor"), "@") {
-		http.NotFound(w, r)
+		httpx.NotFound(w, r)
 		return
 	}
 	s.room(w, r, u)
 }
 
-func (s *Server) roomsIndex(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) roomsIndex(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	var id int64
 	if err := s.DB.Read.QueryRowContext(r.Context(), "SELECT room_id FROM memberships WHERE user_id=? ORDER BY room_id DESC LIMIT 1", u.ID).Scan(&id); err != nil {
-		http.Error(w, "Internal server error", 500)
+		httpx.Error(w, "Internal server error", 500)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("%s/rooms/%d", s.origin(r), id), 302)
+	httpx.Redirect(w, r, fmt.Sprintf("%s/rooms/%d", s.origin(r), id), 302)
 }

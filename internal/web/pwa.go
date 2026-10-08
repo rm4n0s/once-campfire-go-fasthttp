@@ -5,7 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"text/template"
 
 	"github.com/basecamp/once-campfire-go/assets"
@@ -30,7 +30,7 @@ func (s *Server) registerPWARoutes() {
 	}
 	worker, _ := pwaFiles.ReadFile("pwa/service_worker.js")
 	for _, path := range []string{"/service-worker", "/service-worker.js"} {
-		s.mux.HandleFunc("GET "+path, func(w http.ResponseWriter, r *http.Request) {
+		s.mux.HandleFunc("GET "+path, func(w httpx.ResponseWriter, r *httpx.Request) {
 			if s.blockBrowser(w, r) {
 				return
 			}
@@ -42,7 +42,7 @@ func (s *Server) registerPWARoutes() {
 		})
 	}
 }
-func (s *Server) manifest(w http.ResponseWriter, r *http.Request) {
+func (s *Server) manifest(w httpx.ResponseWriter, r *httpx.Request) {
 	if respondFormat(w, r, "json") == "" {
 		return
 	}

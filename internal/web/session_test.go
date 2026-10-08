@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -101,7 +102,7 @@ func TestEncryptedLoginReturnAndSessionRefresh(t *testing.T) {
 func TestTransferPageHasOneCompleteAutoSubmitForm(t *testing.T) {
 	_, server, _, _ := testApp(t)
 	response, body := perform(t, server, http.MethodGet, "/session/transfers/example", "", nil, nil)
-	if response.StatusCode != http.StatusOK {
+	if response.StatusCode != httpx.StatusOK {
 		t.Fatalf("transfer GET: %s", response.Status)
 	}
 	html := string(body)

@@ -6,9 +6,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"html"
 	"html/template"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -37,11 +37,11 @@ func (s *Server) registerMessageRoutes() {
 	s.mux.HandleFunc("DELETE /messages/{message}/boosts/{boost}", s.auth(s.deleteBoost))
 	s.mux.HandleFunc("GET /rooms/{id}/refresh", s.auth(s.refreshRoom))
 }
-func pathInt(r *http.Request, key string) int64 {
+func pathInt(r *httpx.Request, key string) int64 {
 	id, _ := strconv.ParseInt(r.PathValue(key), 10, 64)
 	return id
 }
-func (s *Server) findMessage(r *http.Request, u database.User, administer bool) (database.Message, error) {
+func (s *Server) findMessage(r *httpx.Request, u database.User, administer bool) (database.Message, error) {
 	if route, _, _ := recognize(r.Method, r.URL.EscapedPath()); route != nil && strings.HasPrefix(route.Endpoint, "messages#") && roomID(r) == 0 {
 		return database.Message{}, sql.ErrNoRows
 	}
@@ -232,11 +232,11 @@ func (s *Server) publish(room int64, markup string) {
 	defer cancel()
 	s.Cable.Publish(ctx, room, markup)
 }
-func writeStream(w http.ResponseWriter, markup string) {
+func writeStream(w httpx.ResponseWriter, markup string) {
 	w.Header().Set("Content-Type", "text/vnd.turbo-stream.html; charset=utf-8")
 	fmt.Fprint(w, markup)
 }
-func (s *Server) showMessage(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) showMessage(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	m, err := s.findMessage(r, u, false)
 	if err != nil {
 		s.fail(w, err)
@@ -244,7 +244,7 @@ func (s *Server) showMessage(w http.ResponseWriter, r *http.Request, u database.
 	}
 	s.render(w, r, "show-message", 200, page{User: u, messageRecords: []database.Message{m}})
 }
-func (s *Server) editMessage(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) editMessage(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	m, err := s.findMessage(r, u, true)
 	if err != nil {
 		s.fail(w, err)
@@ -252,7 +252,7 @@ func (s *Server) editMessage(w http.ResponseWriter, r *http.Request, u database.
 	}
 	s.render(w, r, "edit-message", 200, page{User: u, messageRecords: []database.Message{m}})
 }
-func (s *Server) updateMessage(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) updateMessage(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	m, err := s.findMessage(r, u, true)
 	if err != nil {
 		s.fail(w, err)
@@ -282,12 +282,12 @@ func (s *Server) updateMessage(w http.ResponseWriter, r *http.Request, u databas
 		return
 	}
 	if format == "json" {
-		http.Error(w, "Missing template messages/show", 500)
+		httpx.Error(w, "Missing template messages/show", 500)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/rooms/%d/messages/%d", m.RoomID, m.ID), 302)
+	httpx.Redirect(w, r, fmt.Sprintf("/rooms/%d/messages/%d", m.RoomID, m.ID), 302)
 }
-func (s *Server) deleteMessage(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) deleteMessage(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	m, err := s.findMessage(r, u, true)
 	if err != nil {
 		s.fail(w, err)
@@ -303,7 +303,7 @@ func (s *Server) deleteMessage(w http.ResponseWriter, r *http.Request, u databas
 		writeStream(w, markup)
 	}
 }
-func (s *Server) boosts(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) boosts(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	m, err := s.findMessage(r, u, false)
 	if err != nil {
 		s.fail(w, err)
@@ -311,7 +311,7 @@ func (s *Server) boosts(w http.ResponseWriter, r *http.Request, u database.User)
 	}
 	s.render(w, r, "boosts-index", 200, page{User: u, messageRecords: []database.Message{m}})
 }
-func (s *Server) newBoost(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) newBoost(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	m, err := s.findMessage(r, u, false)
 	if err != nil {
 		s.fail(w, err)
@@ -319,7 +319,7 @@ func (s *Server) newBoost(w http.ResponseWriter, r *http.Request, u database.Use
 	}
 	s.render(w, r, "new-boost", 200, page{User: u, messageRecords: []database.Message{m}})
 }
-func (s *Server) createBoost(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) createBoost(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	m, err := s.findMessage(r, u, false)
 	if err != nil {
 		s.fail(w, err)
@@ -336,9 +336,9 @@ func (s *Server) createBoost(w http.ResponseWriter, r *http.Request, u database.
 		return
 	}
 	s.publish(m.RoomID, stream("append", "boosts_message_"+m.ClientID, markup))
-	http.Redirect(w, r, fmt.Sprintf("/messages/%d/boosts", m.ID), 302)
+	httpx.Redirect(w, r, fmt.Sprintf("/messages/%d/boosts", m.ID), 302)
 }
-func (s *Server) deleteBoost(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) deleteBoost(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	m, err := s.findMessage(r, u, false)
 	if err != nil {
 		s.fail(w, err)
@@ -353,7 +353,7 @@ func (s *Server) deleteBoost(w http.ResponseWriter, r *http.Request, u database.
 	s.publish(m.RoomID, markup)
 	w.WriteHeader(204)
 }
-func (s *Server) refreshRoom(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) refreshRoom(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	room, err := s.DB.Room(r.Context(), u.ID, roomID(r))
 	if err != nil {
 		s.fail(w, err)
@@ -362,7 +362,7 @@ func (s *Server) refreshRoom(w http.ResponseWriter, r *http.Request, u database.
 	seconds, err := strconv.ParseFloat(r.URL.Query().Get("since"), 64)
 	since := time.UnixMicro(int64(seconds * 1000))
 	if err != nil {
-		http.Error(w, "Invalid timestamp", 400)
+		httpx.Error(w, "Invalid timestamp", 400)
 		return
 	}
 	created, updated, err := s.DB.RefreshedMessages(r.Context(), room.ID, since)

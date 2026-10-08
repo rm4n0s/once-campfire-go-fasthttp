@@ -3,9 +3,9 @@ package front
 import (
 	"bytes"
 	"compress/gzip"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"os/exec"
 	"strings"
 	"testing"
@@ -15,15 +15,15 @@ func TestPublicCompressionStreamingAndJitter(t *testing.T) {
 	body := strings.Repeat("hello campfire ", 20000)
 	for _, coding := range []string{"gzip", "zstd"} {
 		t.Run(coding, func(t *testing.T) {
-			handler := PublicCompression(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := PublicCompression(httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
 				w.Header().Set("Content-Type", "text/html")
 				for start := 0; start < len(body); start += 733 {
 					io.WriteString(w, body[start:min(start+733, len(body))])
 				}
 			}), Config{Gzip: true, CompressionJitter: 32})
-			request := httptest.NewRequest("GET", "/", nil)
+			request := httpxtest.NewRequest("GET", "/", nil)
 			request.Header.Set("Accept-Encoding", coding)
-			response := httptest.NewRecorder()
+			response := httpxtest.NewRecorder()
 			handler.ServeHTTP(response, request)
 			if response.Header().Get("Content-Encoding") != coding {
 				t.Fatal(response.Header())
@@ -69,11 +69,11 @@ func TestPublicCompressionSkipsAndNegotiation(t *testing.T) {
 		{"zstd", "text/plain", strings.Repeat("x", 2048), "session=private", true, ""},
 	}
 	for _, c := range cases {
-		request := httptest.NewRequest("GET", "/", nil)
+		request := httpxtest.NewRequest("GET", "/", nil)
 		request.Header.Set("Accept-Encoding", c.accept)
 		request.Header.Set("Cookie", c.cookie)
-		response := httptest.NewRecorder()
-		PublicCompression(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := httpxtest.NewRecorder()
+		PublicCompression(httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
 			w.Header().Set("Content-Type", c.contentType)
 			io.WriteString(w, c.body)
 		}), Config{Gzip: true, CompressionJitter: 32, DisableGzipOnAuth: c.guard}).ServeHTTP(response, request)

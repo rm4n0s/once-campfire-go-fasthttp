@@ -5,10 +5,11 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"io"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -24,13 +25,13 @@ func TestCompressionNegotiation(t *testing.T) {
 			t.Errorf("%q => %q want %q", c.header, got, c.want)
 		}
 	}
-	handler := Deflate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := Deflate(httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		io.WriteString(w, "<h1>hello</h1>")
 	}))
-	request := httptest.NewRequest("GET", "/", nil)
+	request := httpxtest.NewRequest("GET", "/", nil)
 	request.Header.Set("Accept-Encoding", "gzip")
-	response := httptest.NewRecorder()
+	response := httpxtest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Header().Get("Content-Encoding") != "gzip" {
 		t.Fatal(response.Header())
@@ -44,7 +45,7 @@ func TestCompressionNegotiation(t *testing.T) {
 		t.Fatal(string(body), err)
 	}
 	request.Header.Set("Accept-Encoding", "identity;q=0,gzip;q=0")
-	response = httptest.NewRecorder()
+	response = httpxtest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != 406 {
 		t.Fatal(response.Code)
@@ -53,7 +54,7 @@ func TestCompressionNegotiation(t *testing.T) {
 func TestCacheVariantsLimitsAndCookies(t *testing.T) {
 	var calls atomic.Int32
 	c := NewCache(2048, 1024)
-	handler := c.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := c.Handler(httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
 		calls.Add(1)
 		w.Header().Set("Cache-Control", "public, max-age=30")
 		w.Header().Set("Vary", "Accept-Encoding")
@@ -61,10 +62,10 @@ func TestCacheVariantsLimitsAndCookies(t *testing.T) {
 		w.Header().Add("Set-Cookie", "session_token=secret")
 		io.WriteString(w, r.URL.RequestURI()+r.Header.Get("Accept-Encoding"))
 	}))
-	request := func(path, encoding string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest("GET", path, nil)
+	request := func(path, encoding string) *httpxtest.Recorder {
+		r := httpxtest.NewRequest("GET", path, nil)
 		r.Header.Set("Accept-Encoding", encoding)
-		w := httptest.NewRecorder()
+		w := httpxtest.NewRecorder()
 		handler.ServeHTTP(w, r)
 		return w
 	}
@@ -97,7 +98,7 @@ func TestPrivateCacheMissesKeepFreshHeaders(t *testing.T) {
 		t.Run(policy, func(t *testing.T) {
 			var calls int
 			cache := NewCache(2048, 1024)
-			handler := cache.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := cache.Handler(httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
 				calls++
 				value := strconv.Itoa(calls)
 				w.Header().Set("Cache-Control", policy)
@@ -106,8 +107,8 @@ func TestPrivateCacheMissesKeepFreshHeaders(t *testing.T) {
 				io.WriteString(w, value)
 			}))
 			for i := 1; i <= 2; i++ {
-				w := httptest.NewRecorder()
-				handler.ServeHTTP(w, httptest.NewRequest("GET", "/private", nil))
+				w := httpxtest.NewRecorder()
+				handler.ServeHTTP(w, httpxtest.NewRequest("GET", "/private", nil))
 				value := strconv.Itoa(i)
 				if w.Header().Get("Set-Cookie") != "request="+value || w.Header().Get("X-Request") != value || w.Body.String() != value {
 					t.Fatal("private response reused or stripped request data", w.Header(), w.Body.String())
@@ -117,7 +118,8 @@ func TestPrivateCacheMissesKeepFreshHeaders(t *testing.T) {
 	}
 }
 
-func TestHTTP2AndShutdown(t *testing.T) {
+// fasthttp serves HTTP/1.1 only: neither H2C nor H2 is offered, and requests still succeed.
+func TestHTTPAndShutdown(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -127,17 +129,15 @@ func TestHTTP2AndShutdown(t *testing.T) {
 	config := FromLookup(func(string) (string, bool) { return "", false })
 	config.HTTPPort = port
 	config.TargetPort = port
-	config.H2C = true
+	config.H2C = true // accepted for compatibility; ignored
 	config.LogRequests = false
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- Serve(ctx, config, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ok") }))
+		done <- Serve(ctx, config, httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) { io.WriteString(w, "ok") }))
 	}()
-	protocols := new(http.Protocols)
-	protocols.SetUnencryptedHTTP2(true)
-	client := &http.Client{Transport: &http.Transport{Protocols: protocols}, Timeout: time.Second}
+	client := &http.Client{Transport: &http.Transport{}, Timeout: time.Second}
 	defer client.CloseIdleConnections()
 	var response *http.Response
 	deadline := time.Now().Add(3 * time.Second)
@@ -153,7 +153,7 @@ func TestHTTP2AndShutdown(t *testing.T) {
 	}
 	io.Copy(io.Discard, response.Body)
 	response.Body.Close()
-	if response.ProtoMajor != 2 {
+	if response.ProtoMajor != 1 {
 		t.Fatal(response.Proto)
 	}
 	cancel()
@@ -207,7 +207,7 @@ func TestTLSCertificateCacheAndHTTPRedirect(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- Serve(ctx, c, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "secure") }))
+		done <- Serve(ctx, c, httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) { io.WriteString(w, "secure") }))
 	}()
 	transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots}, ForceAttemptHTTP2: true, DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 		_, port, _ := net.SplitHostPort(address)
@@ -229,7 +229,7 @@ func TestTLSCertificateCacheAndHTTPRedirect(t *testing.T) {
 	}
 	body, err := io.ReadAll(response.Body)
 	response.Body.Close()
-	if err != nil || string(body) != "secure" || response.ProtoMajor != 2 {
+	if err != nil || string(body) != "secure" || response.ProtoMajor != 1 {
 		t.Fatal(string(body), response.Proto, err)
 	}
 	response, err = client.Get("http://example.com:" + strconv.Itoa(c.HTTPPort) + "/rooms/1?q=two")
@@ -248,5 +248,59 @@ func TestTLSCertificateCacheAndHTTPRedirect(t *testing.T) {
 		}
 	case <-time.After(7 * time.Second):
 		t.Fatal("TLS shutdown hung")
+	}
+}
+
+// A hijacked connection (an Action Cable socket) must not hold up graceful shutdown.
+func TestShutdownDoesNotWaitForHijackedConnections(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+	config := FromLookup(func(string) (string, bool) { return "", false })
+	config.HTTPPort, config.TargetPort = port, port
+	config.LogRequests = false
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	release := make(chan struct{})
+	defer close(release)
+	done := make(chan error, 1)
+	go func() {
+		done <- Serve(ctx, config, httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
+			w.Header().Set("Connection", "Upgrade")
+			w.Header().Set("Upgrade", "test")
+			w.WriteHeader(101)
+			httpx.Hijack(w, func(c net.Conn) { <-release })
+		}))
+	}()
+	var conn net.Conn
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		if conn, err = net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port))); err == nil {
+			break
+		}
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	io.WriteString(conn, "GET / HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: test\r\n\r\n")
+	buffer := make([]byte, 64)
+	if n, err := conn.Read(buffer); err != nil || !strings.HasPrefix(string(buffer[:n]), "HTTP/1.1 101") {
+		t.Fatalf("%q %v", buffer[:n], err)
+	}
+	started := time.Now()
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(7 * time.Second):
+		t.Fatal("shutdown hung on a hijacked connection")
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("shutdown took %v with an upgraded connection open", elapsed)
 	}
 }

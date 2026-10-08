@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"io"
 	"net/http"
 	"strings"
@@ -26,7 +27,7 @@ func TestSidebarDocumentAndFrameKeepLayoutFresh(t *testing.T) {
 		}
 		defer res.Body.Close()
 		body, err := io.ReadAll(res.Body)
-		if err != nil || res.StatusCode != http.StatusOK {
+		if err != nil || res.StatusCode != httpx.StatusOK {
 			t.Fatalf("sidebar response: %d %v", res.StatusCode, err)
 		}
 		text := string(body)

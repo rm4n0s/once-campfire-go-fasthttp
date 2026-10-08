@@ -2,7 +2,7 @@ package web
 
 import (
 	"encoding/base64"
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"strings"
 
 	"github.com/basecamp/once-campfire-go/internal/qrcode"
@@ -10,7 +10,7 @@ import (
 
 var qrSlots = make(chan struct{}, 4)
 
-func (s *Server) qrCode(w http.ResponseWriter, r *http.Request) {
+func (s *Server) qrCode(w httpx.ResponseWriter, r *httpx.Request) {
 	value := strings.NewReplacer("-", "+", "_", "/").Replace(r.PathValue("code"))
 	var data []byte
 	var err error

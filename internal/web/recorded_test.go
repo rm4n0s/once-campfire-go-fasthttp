@@ -6,8 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"html/template"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -182,8 +182,8 @@ func TestRecordedMessagesPreserveBodyAndInvalidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest("GET", "/", nil)
-	first := httptest.NewRecorder()
+	request := httpxtest.NewRequest("GET", "/", nil)
+	first := httpxtest.NewRecorder()
 	buffered := &responseBuffer{ResponseWriter: first}
 	writeRecorded(buffered, 200, "before\x00marker\x00after", "\x00marker\x00", fragment)
 	buffered.finish(request)
@@ -204,7 +204,7 @@ func TestRecordedMessagesPreserveBodyAndInvalidate(t *testing.T) {
 		t.Fatal("part identity changed the wire validator")
 	}
 	request.Header.Set("If-None-Match", first.Header().Get("ETag"))
-	second := httptest.NewRecorder()
+	second := httpxtest.NewRecorder()
 	buffered = &responseBuffer{ResponseWriter: second}
 	writeRecorded(buffered, 200, "before\x00marker\x00after", "\x00marker\x00", fragment)
 	buffered.finish(request)

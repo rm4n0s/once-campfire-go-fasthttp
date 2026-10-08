@@ -3,9 +3,10 @@ package web
 import (
 	"context"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -32,11 +33,11 @@ func TestAuthenticationAndMessageFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer app.Close()
-	ts := httptest.NewServer(app)
+	ts := httpxtest.NewServer(app)
 	defer ts.Close()
 	client := ts.Client()
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	req := func(method, path, body string, cookie *http.Cookie, origin string) *http.Response {
+	req := func(method, path, body string, cookie *httpx.Cookie, origin string) *http.Response {
 		t.Helper()
 		r, err := http.NewRequest(method, ts.URL+path, strings.NewReader(body))
 		if err != nil {
@@ -78,7 +79,7 @@ func TestAuthenticationAndMessageFlow(t *testing.T) {
 	if response.StatusCode != 302 {
 		t.Fatal("login", response.Status)
 	}
-	var cookie *http.Cookie
+	var cookie *httpx.Cookie
 	for _, c := range response.Cookies() {
 		if c.Name == "session_token" {
 			cookie = c
@@ -125,7 +126,7 @@ func TestOriginPolicy(t *testing.T) {
 		want         bool
 	}{{false, "", "", true}, {true, "", "", false}, {true, "same-origin", "https://chat.test", true}, {true, "same-site", "https://evil.test", false}, {false, "cross-site", "", false}, {false, "same-origin", "null", false}} {
 		s := &Server{Secure: c.secure}
-		r := httptest.NewRequest("POST", "http://chat.test/session", nil)
+		r := httpxtest.NewRequest("POST", "http://chat.test/session", nil)
 		if c.site != "" {
 			r.Header.Set("Sec-Fetch-Site", c.site)
 		}
@@ -144,7 +145,7 @@ func TestFetchMetadataCanonicalPolicyAndProxyHTTPS(t *testing.T) {
 			for _, site := range []string{"absent", "", "same-origin", "same-site", "cross-site", "none", "bogus", "Same-Origin"} {
 				for _, proxy := range []bool{false, true} {
 					s := &Server{Secure: secure}
-					r := httptest.NewRequest("POST", scheme+"://chat.test/session", nil)
+					r := httpxtest.NewRequest("POST", scheme+"://chat.test/session", nil)
 					if proxy {
 						r.Header.Set("X-Forwarded-Proto", "https")
 						r.Header.Set("X-Forwarded-Host", "public.test")
@@ -177,13 +178,13 @@ func TestFetchMetadataRejectsUnsafeRoutesBeforeSideEffects(t *testing.T) {
 	} {
 		for _, auth := range []bool{false, true} {
 			for _, site := range []string{"cross-site", "none", "invalid", ""} {
-				r := httptest.NewRequest(route.method, "http://chat.test"+route.path, strings.NewReader("authenticity_token=old-tab-token"))
+				r := httpxtest.NewRequest(route.method, "http://chat.test"+route.path, strings.NewReader("authenticity_token=old-tab-token"))
 				r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 				r.Header.Set("Sec-Fetch-Site", site)
 				if auth {
 					r.AddCookie(cookie)
 				}
-				w := httptest.NewRecorder()
+				w := httpxtest.NewRecorder()
 				app.ServeHTTP(w, r)
 				if w.Code != 422 {
 					t.Errorf("%s %s auth=%v site=%q: %d", route.method, route.path, auth, site, w.Code)
@@ -200,13 +201,13 @@ func TestTokenBearingOldTabsStillWriteWithFetchMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := "authenticity_token=old-tab-token&message%5Bbody%5D=old+tab+still+writes"
-	r := httptest.NewRequest("POST", fmt.Sprintf("http://chat.test/rooms/%d/messages", rooms[0].ID), strings.NewReader(body))
+	r := httpxtest.NewRequest("POST", fmt.Sprintf("http://chat.test/rooms/%d/messages", rooms[0].ID), strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.Header.Set("Accept", "*/*")
 	r.Header.Set("Origin", "http://chat.test")
 	r.Header.Set("Sec-Fetch-Site", "same-origin")
 	r.AddCookie(cookie)
-	w := httptest.NewRecorder()
+	w := httpxtest.NewRecorder()
 	app.ServeHTTP(w, r)
 	if w.Code != 200 {
 		t.Fatalf("old tab write: %d %s", w.Code, w.Body.String())
@@ -226,11 +227,11 @@ func TestBotKeyPathDoesNotExemptSessionCookieWrites(t *testing.T) {
 	if err != nil || len(rooms) == 0 {
 		t.Fatal(err)
 	}
-	r := httptest.NewRequest("POST", fmt.Sprintf("http://chat.test/rooms/%d/not-a-bot-key/messages", rooms[0].ID), strings.NewReader("body=forged"))
+	r := httpxtest.NewRequest("POST", fmt.Sprintf("http://chat.test/rooms/%d/not-a-bot-key/messages", rooms[0].ID), strings.NewReader("body=forged"))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.Header.Set("Sec-Fetch-Site", "cross-site")
 	r.AddCookie(cookie)
-	w := httptest.NewRecorder()
+	w := httpxtest.NewRecorder()
 	app.ServeHTTP(w, r)
 	if w.Code != 422 {
 		t.Fatalf("session cookie on bot route bypassed policy: %d", w.Code)

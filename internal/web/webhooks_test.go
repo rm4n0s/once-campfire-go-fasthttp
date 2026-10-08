@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync/atomic"
@@ -20,7 +20,7 @@ func TestBotWebhookReply(t *testing.T) {
 			app, server, cookie, user := testApp(t)
 			ctx := context.Background()
 			var calls atomic.Int32
-			webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			webhook := httpxtest.NewServer(httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
 				calls.Add(1)
 				raw, _ := io.ReadAll(r.Body)
 				var payload struct {

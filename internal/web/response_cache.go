@@ -5,7 +5,7 @@ import (
 	"compress/gzip"
 	"container/list"
 	"encoding/json"
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"os"
 	"strconv"
 	"strings"
@@ -20,7 +20,7 @@ type cachedResponse struct {
 	key     string
 	version uint64
 	body    responsebody.Part
-	header  http.Header
+	header  *httpx.Header
 	cost    int
 }
 type responseCache struct {
@@ -81,7 +81,7 @@ func (c *responseCache) put(entry *cachedResponse) {
 	c.entries[entry.key] = c.order.PushFront(entry)
 	c.size += entry.cost
 }
-func (s *Server) beginResponseCache(r *http.Request) {
+func (s *Server) beginResponseCache(r *httpx.Request) {
 	info := requestMetadata(r.Context())
 	if info == nil {
 		return
@@ -111,7 +111,7 @@ func (s *Server) beginResponseCache(r *http.Request) {
 	state.load()
 	info.response = &responseRound{version: version, gzip: encoding == "gzip", flash: state.values["flash"] != nil}
 }
-func (s *Server) responseHit(r *http.Request) *cachedResponse {
+func (s *Server) responseHit(r *httpx.Request) *cachedResponse {
 	info := requestMetadata(r.Context())
 	if info == nil || info.response == nil {
 		return nil
@@ -136,16 +136,14 @@ func (s *Server) responseHit(r *http.Request) *cachedResponse {
 	round.hit = entry != nil
 	return entry
 }
-func (entry *cachedResponse) serve(w http.ResponseWriter) {
-	for key, values := range entry.header {
-		w.Header()[key] = append([]string(nil), values...)
-	}
-	writeParts(w, http.StatusOK, []responsebody.Part{entry.body})
+func (entry *cachedResponse) serve(w httpx.ResponseWriter) {
+	w.Header().Replace(entry.header)
+	writeParts(w, httpx.StatusOK, []responsebody.Part{entry.body})
 }
 
 // Only completed representations enter the cache; security and session headers
 // stay on the live writer. The version was captured before authentication.
-func (s *Server) cacheResponse(r *http.Request, w *responseBuffer, parts []responsebody.Part) []responsebody.Part {
+func (s *Server) cacheResponse(r *httpx.Request, w *responseBuffer, parts []responsebody.Part) []responsebody.Part {
 	info := requestMetadata(r.Context())
 	if info == nil || info.response == nil {
 		return parts
@@ -178,7 +176,7 @@ func (s *Server) cacheResponse(r *http.Request, w *responseBuffer, parts []respo
 		var compressed bytes.Buffer
 		writer, _ := gzip.NewWriterLevel(&compressed, 6)
 		writer.Header.OS = 3
-		if stamp, err := http.ParseTime(w.Header().Get("Last-Modified")); err == nil && stamp.Unix() > 0 {
+		if stamp, err := httpx.ParseTime(w.Header().Get("Last-Modified")); err == nil && stamp.Unix() > 0 {
 			writer.Header.ModTime = time.Unix(stamp.Unix(), 0)
 		}
 		if _, err = writer.Write(body.Bytes()); err != nil {
@@ -189,10 +187,10 @@ func (s *Server) cacheResponse(r *http.Request, w *responseBuffer, parts []respo
 		}
 		body = compressed
 	}
-	header := make(http.Header)
+	header := new(httpx.Header)
 	for _, name := range []string{"Content-Type", "ETag", "Last-Modified", "Cache-Control", "Link", "Vary"} {
 		if values := w.Header().Values(name); len(values) > 0 {
-			header[http.CanonicalHeaderKey(name)] = append([]string(nil), values...)
+			header.SetValues(name, values)
 		}
 	}
 	if !strings.Contains(header.Get("Vary"), "Accept-Encoding") {
@@ -203,19 +201,12 @@ func (s *Server) cacheResponse(r *http.Request, w *responseBuffer, parts []respo
 	}
 	entry := &cachedResponse{key: round.key, version: round.version, body: responsebody.NewPart(body.Bytes()), header: header}
 	entry.cost = body.Cap() + len(entry.key) + 1024
-	for name, values := range header {
-		entry.cost += len(name)
-		for _, value := range values {
-			entry.cost += len(value)
-		}
-	}
+	header.Each(func(name, value string) { entry.cost += len(name) + len(value) })
 	version, err = s.DB.ResponseVersion(r.Context())
 	if err == nil && version == round.version {
 		s.responses.put(entry)
 	}
-	for name, values := range header {
-		w.Header()[name] = values
-	}
+	w.Header().Replace(header)
 	return []responsebody.Part{entry.body}
 }
 func responseCacheBudget() (int, error) {

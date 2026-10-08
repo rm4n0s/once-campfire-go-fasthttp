@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"html/template"
 	"log/slog"
-	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -212,7 +212,7 @@ func New(
 	return s, nil
 }
 
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *Server) ServeHTTP(w httpx.ResponseWriter, r *httpx.Request) {
 	r = r.WithContext(
 		context.WithValue(
 			r.Context(),
@@ -236,7 +236,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	if _, err := requestRemoteIP(r); err != nil {
-		http.Error(w, "IP spoofing attack", 500)
+		httpx.Error(w, "IP spoofing attack", 500)
 		return
 	}
 	if !strings.HasPrefix(r.URL.Path, "/rails/active_storage/") {
@@ -273,7 +273,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if multipartBoundary(r) != "" {
 			limit = maxMultipartBody
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, limit)
+		r.Body = httpx.MaxBytesReader(r.Body, limit)
 		// The disk PUT authenticates a session and a signed upload capability;
 		// direct-upload creation and every other browser write use Fetch Metadata.
 		if r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/rails/active_storage/disk/") {
@@ -281,15 +281,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !s.browserWriteAllowed(r) {
-			http.Error(w, "Invalid request origin", 422)
+			httpx.Error(w, "Invalid request origin", 422)
 			return
 		}
 		if err := r.ParseForm(); err != nil {
-			var limit *http.MaxBytesError
+			var limit *httpx.MaxBytesError
 			if errors.As(err, &limit) {
-				http.Error(w, "Request too large", 413)
+				httpx.Error(w, "Request too large", 413)
 			} else {
-				http.Error(w, "Invalid form", 400)
+				httpx.Error(w, "Invalid form", 400)
 			}
 			return
 		}
@@ -297,21 +297,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			cleanup, err := parseMultipart(r, boundary)
 			defer cleanup()
 			if err != nil {
-				var limit *http.MaxBytesError
+				var limit *httpx.MaxBytesError
 				if errors.As(err, &limit) {
-					http.Error(w, "Request too large", 413)
+					httpx.Error(w, "Request too large", 413)
 				} else {
-					http.Error(w, "Invalid upload", 400)
+					httpx.Error(w, "Invalid upload", 400)
 				}
 				return
 			}
 		}
 		if err := parseJSONParams(r); err != nil {
-			var limit *http.MaxBytesError
+			var limit *httpx.MaxBytesError
 			if errors.As(err, &limit) {
-				http.Error(w, "Request too large", 413)
+				httpx.Error(w, "Request too large", 413)
 			} else {
-				http.Error(w, "Invalid JSON", 400)
+				httpx.Error(w, "Invalid JSON", 400)
 			}
 			return
 		}
@@ -332,7 +332,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Form == nil {
 		if err := r.ParseForm(); err != nil {
-			http.Error(w, "Invalid query", 400)
+			httpx.Error(w, "Invalid query", 400)
 			return
 		}
 	}
@@ -342,18 +342,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // Matches Rust's token-free unsafe-request policy. An explicitly empty header is
 // malformed, not the plain-HTTP compatibility case where the header is absent.
-func (s *Server) browserWriteAllowed(r *http.Request) bool {
-	if values, provided := r.Header["Origin"]; provided && (len(values) == 0 || values[0] != s.origin(r)) {
+func (s *Server) browserWriteAllowed(r *httpx.Request) bool {
+	if values, provided := r.Header.Lookup("Origin"); provided && (len(values) == 0 || values[0] != s.origin(r)) {
 		return false
 	}
-	values, provided := r.Header["Sec-Fetch-Site"]
+	values, provided := r.Header.Lookup("Sec-Fetch-Site")
 	if !provided {
 		return !s.Secure && !s.requestHTTPS(r)
 	}
 	return len(values) > 0 && (values[0] == "same-origin" || values[0] == "same-site")
 }
 
-func (s *Server) sameOrigin(r *http.Request) bool {
+func (s *Server) sameOrigin(r *httpx.Request) bool {
 	site := r.Header.Get("Sec-Fetch-Site")
 	if site == "cross-site" || s.Secure && (site != "same-origin" && site != "same-site") {
 		return false
@@ -370,7 +370,7 @@ func (s *Server) sameOrigin(r *http.Request) bool {
 	return true
 }
 
-func (s *Server) health(w http.ResponseWriter, r *http.Request) {
+func (s *Server) health(w httpx.ResponseWriter, r *httpx.Request) {
 	format := respondFormat(w, r, "html", "json")
 	if format == "" {
 		return
@@ -387,7 +387,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, HealthBody)
 }
 
-func (s *Server) render(w http.ResponseWriter, r *http.Request, name string, status int, p page) {
+func (s *Server) render(w httpx.ResponseWriter, r *httpx.Request, name string, status int, p page) {
 	if name != "incompatible-browser" && respondFormat(w, r, "html") == "" {
 		return
 	}
@@ -510,7 +510,7 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, name string, sta
 	w.Write(b.Bytes())
 }
 
-func (s *Server) fail(w http.ResponseWriter, err error) {
+func (s *Server) fail(w httpx.ResponseWriter, err error) {
 	status := 500
 	if errors.Is(err, sql.ErrNoRows) {
 		status = 404
@@ -522,14 +522,14 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 	if writer, ok := w.(*sessionWriter); ok {
 		publicError(w, writer.session.request, status)
 	} else {
-		http.Error(w, http.StatusText(status), status)
+		httpx.Error(w, httpx.StatusText(status), status)
 	}
 }
 
 func (s *Server) auth(
-	next func(http.ResponseWriter, *http.Request, database.User),
-) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	next func(httpx.ResponseWriter, *httpx.Request, database.User),
+) httpx.HandlerFunc {
+	return func(w httpx.ResponseWriter, r *httpx.Request) {
 		var token string
 		c, err := r.Cookie("session_token")
 		if err == nil {
@@ -580,7 +580,7 @@ func (s *Server) hasAccount(ctx context.Context) (bool, error) {
 	return n > 0, err
 }
 
-func (s *Server) loginForm(w http.ResponseWriter, r *http.Request) {
+func (s *Server) loginForm(w httpx.ResponseWriter, r *httpx.Request) {
 	if !s.requireUnauthenticated(w, r) {
 		return
 	}
@@ -590,20 +590,20 @@ func (s *Server) loginForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !exists {
-		http.Redirect(w, r, "/first_run", 302)
+		httpx.Redirect(w, r, "/first_run", 302)
 		return
 	}
 	s.render(w, r, "login", 200, page{Title: "Sign in"})
 }
 
-func (s *Server) setupForm(w http.ResponseWriter, r *http.Request) {
+func (s *Server) setupForm(w httpx.ResponseWriter, r *httpx.Request) {
 	exists, err := s.hasAccount(r.Context())
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	if exists {
-		http.Redirect(w, r, "/", 302)
+		httpx.Redirect(w, r, "/", 302)
 		return
 	}
 	s.render(w, r, "first-run", 200, page{Title: "Set up Campfire", Setup: true})
@@ -630,7 +630,7 @@ func (s *Server) allowLogin(ip string) bool {
 	return a.Count <= 10
 }
 
-func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+func (s *Server) login(w httpx.ResponseWriter, r *httpx.Request) {
 	if !s.requireUnauthenticated(w, r) {
 		return
 	}
@@ -667,7 +667,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	s.startSession(w, r, u)
 }
 
-func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
+func (s *Server) setup(w httpx.ResponseWriter, r *httpx.Request) {
 	password := r.Form.Get("user[password]")
 	if password == "" || len(password) > 72 {
 		s.render(
@@ -704,7 +704,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 		pendingBlob(upload),
 	)
 	if errors.Is(err, database.ErrForbidden) {
-		http.Redirect(w, r, "/", 302)
+		httpx.Redirect(w, r, "/", 302)
 		return
 	}
 	if errors.Is(err, database.ErrValidation) {
@@ -729,7 +729,7 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 	s.startSession(w, r, u)
 }
 
-func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) startSession(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	token, err := s.DB.StartSession(r.Context(), u.ID, r.UserAgent(), remoteIP(r))
 	if err != nil {
 		s.fail(w, err)
@@ -744,10 +744,10 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u database
 		s.fail(w, errors.New("unsafe authentication redirect"))
 		return
 	}
-	http.Redirect(w, r, location, 302)
+	httpx.Redirect(w, r, location, 302)
 }
 
-func (s *Server) logout(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) logout(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	c, err := r.Cookie("session_token")
 	if err != nil {
 		s.fail(w, err)
@@ -770,20 +770,20 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request, u database.User)
 		}
 	}
 	browserState(r).reset()
-	http.SetCookie(
+	httpx.SetCookie(
 		w,
-		&http.Cookie{
+		&httpx.Cookie{
 			Name:     "session_token",
 			Path:     "/",
 			MaxAge:   -1,
 			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
+			SameSite: httpx.SameSiteLaxMode,
 		},
 	)
-	http.Redirect(w, r, "/", 302)
+	httpx.Redirect(w, r, "/", 302)
 }
 
-func (s *Server) lastRoom(r *http.Request, user int64) (int64, error) {
+func (s *Server) lastRoom(r *httpx.Request, user int64) (int64, error) {
 	if cookie, err := r.Cookie("last_room"); err == nil {
 		if id, err := strconv.ParseInt(cookie.Value, 10, 64); err == nil {
 			if _, err = s.DB.Room(r.Context(), user, id); err == nil {
@@ -794,7 +794,7 @@ func (s *Server) lastRoom(r *http.Request, user int64) (int64, error) {
 	return s.DB.OriginalRoom(r.Context(), user)
 }
 
-func (s *Server) home(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) home(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	id, err := s.lastRoom(r, u.ID)
 	if errors.Is(err, sql.ErrNoRows) {
 		s.render(w, r, "welcome", 200, page{Title: "No rooms yet", User: u})
@@ -804,10 +804,10 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request, u database.User) {
 		s.fail(w, err)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("%s/rooms/%d", s.origin(r), id), 302)
+	httpx.Redirect(w, r, fmt.Sprintf("%s/rooms/%d", s.origin(r), id), 302)
 }
 
-func roomID(r *http.Request) int64 {
+func roomID(r *httpx.Request) int64 {
 	value := r.PathValue("room_id")
 	if value == "" {
 		value = r.Form.Get("room_id")
@@ -827,7 +827,7 @@ func viewMessages(messages []database.Message) []messageView {
 	return result
 }
 
-func (s *Server) room(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) room(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	room, err := s.DB.Room(r.Context(), u.ID, roomID(r))
 	if err != nil {
 		s.roomLookupFailure(w, r, err)
@@ -875,7 +875,7 @@ func (s *Server) room(w http.ResponseWriter, r *http.Request, u database.User) {
 	)
 }
 
-func (s *Server) messages(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) messages(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	room, err := s.DB.Room(r.Context(), u.ID, roomID(r))
 	if err != nil {
 		s.fail(w, err)
@@ -905,7 +905,7 @@ func (s *Server) messages(w http.ResponseWriter, r *http.Request, u database.Use
 	s.render(w, r, "messages", 200, page{messageRecords: messages})
 }
 
-func (s *Server) createMessage(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) createMessage(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	if !requireMessage(w, r) {
 		return
 	}
@@ -976,7 +976,7 @@ func (s *Server) createMessage(w http.ResponseWriter, r *http.Request, u databas
 	}
 }
 
-func (s *Server) sidebar(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) sidebar(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	if hit := s.responseHit(r); hit != nil {
 		hit.serve(w)
 		return
@@ -1006,14 +1006,14 @@ func (s *Server) sidebar(w http.ResponseWriter, r *http.Request, u database.User
 	)
 }
 
-func (s *Server) search(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) search(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	q := database.SearchQuery(r.FormValue("q"))
 	if r.Method == "POST" {
 		if err := s.DB.RecordSearch(r.Context(), u.ID, q); err != nil {
 			s.fail(w, err)
 			return
 		}
-		http.Redirect(w, r, "/searches?q="+url.QueryEscape(q), 302)
+		httpx.Redirect(w, r, "/searches?q="+url.QueryEscape(q), 302)
 		return
 	}
 	if r.Method == "DELETE" {
@@ -1021,7 +1021,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request, u database.User)
 			s.fail(w, err)
 			return
 		}
-		http.Redirect(w, r, "/searches", 302)
+		httpx.Redirect(w, r, "/searches", 302)
 		return
 	}
 	if hit := s.responseHit(r); hit != nil {
@@ -1056,19 +1056,19 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request, u database.User)
 	s.render(w, r, "search", 200, p)
 }
 
-func (s *Server) serveCable(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) serveCable(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	if !s.sameOrigin(r) {
-		http.Error(w, "Invalid request origin", 403)
+		httpx.Error(w, "Invalid request origin", 403)
 		return
 	}
 	c, err := r.Cookie("session_token")
 	if err != nil {
-		http.Error(w, "Unauthorized", 401)
+		httpx.Error(w, "Unauthorized", 401)
 		return
 	}
 	var token string
 	if err = s.Secrets.VerifyCookie("session_token", rails.UnescapeCookie(c.Value), s.DB.Now(), &token); err != nil {
-		http.Error(w, "Unauthorized", 401)
+		httpx.Error(w, "Unauthorized", 401)
 		return
 	}
 	s.Cable.Serve(w, r, u, token)

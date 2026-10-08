@@ -3,17 +3,17 @@ package front
 import (
 	"compress/gzip"
 	"encoding/binary"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"hash/crc32"
 	"io"
 	"math/bits"
-	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/basecamp/once-campfire-go/internal/zstd"
 )
 
-func publicEncoding(r *http.Request) string {
+func publicEncoding(r *httpx.Request) string {
 	if r.Method == "HEAD" {
 		return ""
 	}
@@ -57,7 +57,7 @@ func compressibleType(value string) bool {
 	}
 	return true
 }
-func compressionPrivate(h http.Header) bool {
+func compressionPrivate(h *httpx.Header) bool {
 	if h.Get("Set-Cookie") != "" {
 		return true
 	}
@@ -88,8 +88,8 @@ func jitterFor(body []byte, n int) []byte {
 }
 
 type publicResponse struct {
-	http.ResponseWriter
-	request  *http.Request
+	httpx.ResponseWriter
+	request  *httpx.Request
 	config   Config
 	status   int
 	selected string
@@ -100,7 +100,7 @@ type publicResponse struct {
 	err      error
 }
 
-func (w *publicResponse) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+func (w *publicResponse) Unwrap() httpx.ResponseWriter { return w.ResponseWriter }
 func (w *publicResponse) WriteHeader(status int) {
 	if status < 200 {
 		w.ResponseWriter.WriteHeader(status)
@@ -140,7 +140,7 @@ func (w *publicResponse) start() {
 		w.selected = ""
 	}
 	if h.Get("Content-Type") == "" && len(w.buffer) > 0 {
-		h.Set("Content-Type", http.DetectContentType(w.buffer))
+		h.Set("Content-Type", httpx.DetectContentType(w.buffer))
 		if !compressibleType(h.Get("Content-Type")) {
 			w.selected = ""
 		}
@@ -215,8 +215,24 @@ func (w *publicResponse) Flush() {
 		w.err = flusher.Flush()
 	}
 	if w.err == nil {
-		w.err = http.NewResponseController(w.ResponseWriter).Flush()
+		httpx.Flush(w.ResponseWriter)
 	}
+}
+
+// PassesThrough reports whether the response will not be compressed, deciding that
+// now when the type and negotiation already settle it, so a file may stream past.
+func (w *publicResponse) PassesThrough() bool {
+	if w.status == 0 || w.err != nil || w.writer != nil {
+		return false
+	}
+	if !w.started {
+		if w.selected != "" && compressibleType(w.Header().Get("Content-Type")) {
+			return false
+		}
+		w.selected = ""
+		w.start()
+	}
+	return len(w.buffer) == 0
 }
 func (w *publicResponse) finish() {
 	if w.status == 0 {
@@ -237,11 +253,11 @@ func (w *publicResponse) finish() {
 		}
 	}
 }
-func PublicCompression(next http.Handler, c Config) http.Handler {
+func PublicCompression(next httpx.Handler, c Config) httpx.Handler {
 	if !c.Gzip {
 		return next
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
 		if r.Header.Get("Upgrade") != "" {
 			next.ServeHTTP(w, r)
 			return

@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -53,7 +53,7 @@ func TestRoomAuthorizationAndDelivery(t *testing.T) {
 	}
 	hub := New(db, secrets)
 	defer hub.Close()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httpxtest.NewServer(httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
 		u := user
 		if r.URL.Path == "/stranger" {
 			u.ID = stranger

@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"html/template"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -30,7 +31,7 @@ func TestSearchShellKeepsNavigationFresh(t *testing.T) {
 		t.Helper()
 		r, _ := http.NewRequest("GET", server.URL+"/searches?q=shellneedle", nil)
 		r.AddCookie(cookie)
-		r.AddCookie(&http.Cookie{Name: "last_room", Value: fmt.Sprint(room)})
+		r.AddCookie(&httpx.Cookie{Name: "last_room", Value: fmt.Sprint(room)})
 		r.Header.Set("If-None-Match", etag)
 		res, err := server.Client().Do(r)
 		if err != nil {
@@ -108,9 +109,9 @@ func TestSearchShellPreservesBytesIdentityAndOwnership(t *testing.T) {
 		if err := app.templates.ExecuteTemplate(&expected, "search", p); err != nil {
 			t.Fatal(err)
 		}
-		before := httptest.NewRecorder()
+		before := httpxtest.NewRecorder()
 		writeRecorded(before, 200, expected.String(), marker, parts[1])
-		after := httptest.NewRecorder()
+		after := httpxtest.NewRecorder()
 		writeParts(after, 200, parts)
 		if before.Header().Get("ETag") != after.Header().Get("ETag") {
 			t.Fatal("search validator changed")

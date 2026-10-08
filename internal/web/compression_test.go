@@ -6,9 +6,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -16,16 +17,16 @@ import (
 )
 
 func TestCompressedOrdinaryPageSurvivesBufferReuse(t *testing.T) {
-	handler := front.Deflate(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := front.Deflate(httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
 		buffered := &responseBuffer{ResponseWriter: w}
 		fmt.Fprintf(buffered, "<html><body>%s</body></html>", strings.Repeat(r.URL.Query().Get("name"), 300))
 		buffered.finish(r)
 	}))
 	var first []byte
 	for i, name := range []string{"Alpha user", "Bravo user", "Alpha user"} {
-		request := httptest.NewRequest("GET", "/?name="+strings.ReplaceAll(name, " ", "+"), nil)
+		request := httpxtest.NewRequest("GET", "/?name="+strings.ReplaceAll(name, " ", "+"), nil)
 		request.Header.Set("Accept-Encoding", "gzip")
-		response := httptest.NewRecorder()
+		response := httpxtest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		reader, err := gzip.NewReader(response.Body)
 		if err != nil {
@@ -51,7 +52,7 @@ func TestCompressedOrdinaryPageSurvivesBufferReuse(t *testing.T) {
 
 func TestCompressedRoomTracksEditsAndRechecksAuthorization(t *testing.T) {
 	app, _, cookie, user := testApp(t)
-	server := httptest.NewServer(front.Deflate(app))
+	server := httpxtest.NewServer(front.Deflate(app))
 	defer server.Close()
 	server.Client().CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	ctx := context.Background()
@@ -108,7 +109,7 @@ func TestCompressedRoomTracksEditsAndRechecksAuthorization(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, _, denied := fetch("gzip")
-	if status != http.StatusFound || strings.Contains(string(denied), "after edit") {
+	if status != httpx.StatusFound || strings.Contains(string(denied), "after edit") {
 		t.Fatal("compressed-body reuse bypassed revoked membership", status)
 	}
 }

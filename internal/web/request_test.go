@@ -1,7 +1,7 @@
 package web
 
 import (
-	"net/http/httptest"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"testing"
 )
 
@@ -18,7 +18,7 @@ func TestProxyRequestContracts(t *testing.T) {
 		{"127.0.0.1:1", "198.51.100.20", "198.51.100.20", "198.51.100.20", false},
 	}
 	for _, c := range cases {
-		r := httptest.NewRequest("GET", "http://internal/", nil)
+		r := httpxtest.NewRequest("GET", "http://internal/", nil)
 		r.RemoteAddr = c.peer
 		r.Header.Set("X-Forwarded-For", c.forwarded)
 		r.Header.Set("Client-IP", c.client)
@@ -28,7 +28,7 @@ func TestProxyRequestContracts(t *testing.T) {
 		}
 	}
 	s := &Server{}
-	r := httptest.NewRequest("GET", "http://internal:80/", nil)
+	r := httpxtest.NewRequest("GET", "http://internal:80/", nil)
 	r.Header.Set("X-Forwarded-Host", "first.example, chat.example:443")
 	r.Header.Set("X-Forwarded-Proto", "http, https")
 	if got := s.origin(r); got != "https://chat.example" {

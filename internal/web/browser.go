@@ -1,12 +1,12 @@
 package web
 
 import (
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"strings"
 )
 
-func (s *Server) browserCheck(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (s *Server) browserCheck(next httpx.HandlerFunc) httpx.HandlerFunc {
+	return func(w httpx.ResponseWriter, r *httpx.Request) {
 		if !s.blockBrowser(w, r) {
 			next(w, r)
 		}
@@ -14,7 +14,7 @@ func (s *Server) browserCheck(next http.HandlerFunc) http.HandlerFunc {
 }
 
 // ApplicationController's allow_browser runs after authentication and forgery protection.
-func (s *Server) blockBrowser(w http.ResponseWriter, r *http.Request) bool {
+func (s *Server) blockBrowser(w httpx.ResponseWriter, r *httpx.Request) bool {
 	blocked, _ := requestAgent(r).Blocked()
 	if !blocked {
 		return false
@@ -25,6 +25,6 @@ func (s *Server) blockBrowser(w http.ResponseWriter, r *http.Request) bool {
 			frame = false
 		}
 	}
-	s.render(w, r, "incompatible-browser", http.StatusOK, page{Frame: frame})
+	s.render(w, r, "incompatible-browser", httpx.StatusOK, page{Frame: frame})
 	return true
 }

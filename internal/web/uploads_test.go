@@ -7,10 +7,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"io"
 	"mime/multipart"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -23,7 +24,7 @@ import (
 	"github.com/basecamp/once-campfire-go/internal/storage"
 )
 
-func testApp(t *testing.T) (*Server, *httptest.Server, *http.Cookie, database.User) {
+func testApp(t *testing.T) (*Server, *httpxtest.Server, *httpx.Cookie, database.User) {
 	t.Helper()
 	root := t.TempDir()
 	db, err := database.Open(filepath.Join(root, "test.sqlite3"), 4)
@@ -52,11 +53,11 @@ func testApp(t *testing.T) (*Server, *httptest.Server, *http.Cookie, database.Us
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(app)
+	server := httpxtest.NewServer(app)
 	t.Cleanup(server.Close)
-	return app, server, &http.Cookie{Name: "session_token", Value: rails.EscapeCookie(signed)}, user
+	return app, server, &httpx.Cookie{Name: "session_token", Value: rails.EscapeCookie(signed)}, user
 }
-func perform(t *testing.T, server *httptest.Server, method, path, ct string, body io.Reader, cookie *http.Cookie) (*http.Response, []byte) {
+func perform(t *testing.T, server *httpxtest.Server, method, path, ct string, body io.Reader, cookie *httpx.Cookie) (*http.Response, []byte) {
 	t.Helper()
 	if !strings.HasPrefix(path, "http") {
 		path = server.URL + path
@@ -222,14 +223,14 @@ func TestSignedDiskUploadCapabilityDoesNotRequireFetchMetadata(t *testing.T) {
 			if control.tampered {
 				url += "bad"
 			}
-			r := httptest.NewRequest("PUT", url, strings.NewReader(control.data))
+			r := httpxtest.NewRequest("PUT", url, strings.NewReader(control.data))
 			r.Header.Set("Content-Type", "text/plain")
 			r.Header.Set("Origin", "https://other.test")
 			r.Header.Set("Sec-Fetch-Site", "cross-site")
 			if control.authenticated {
 				r.AddCookie(cookie)
 			}
-			w := httptest.NewRecorder()
+			w := httpxtest.NewRecorder()
 			app.ServeHTTP(w, r)
 			if w.Code != control.status {
 				t.Fatalf("got %d want %d: %s", w.Code, control.status, w.Body.String())

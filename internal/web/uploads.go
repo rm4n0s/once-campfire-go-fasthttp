@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"io"
 	"mime"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -28,12 +28,12 @@ func (s *Server) registerStorageRoutes() {
 	s.mux.HandleFunc("GET /rails/active_storage/blobs/proxy/{token}/{filename...}", s.blobDownload)
 	s.mux.HandleFunc("GET /rails/active_storage/blobs/{token}/{filename...}", s.blobDownload)
 }
-func (s *Server) directUpload(w http.ResponseWriter, r *http.Request, _ database.User) {
+func (s *Server) directUpload(w httpx.ResponseWriter, r *httpx.Request, _ database.User) {
 	var data struct {
 		Blob map[string]json.RawMessage `json:"blob"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil || data.Blob == nil {
-		http.Error(w, "Invalid blob", 400)
+		httpx.Error(w, "Invalid blob", 400)
 		return
 	}
 	scalar := func(key string) (string, bool) {
@@ -55,7 +55,7 @@ func (s *Server) directUpload(w http.ResponseWriter, r *http.Request, _ database
 	checksum, _ := scalar("checksum")
 	sizeText, hasSize := scalar("byte_size")
 	if filename == "" || checksum == "" || !hasSize {
-		http.Error(w, "Invalid blob", 422)
+		httpx.Error(w, "Invalid blob", 422)
 		return
 	}
 	// Active Record's integer cast accepts a numeric prefix (but not nonnumbers).
@@ -69,12 +69,12 @@ func (s *Server) directUpload(w http.ResponseWriter, r *http.Request, _ database
 		end++
 	}
 	if end == digits {
-		http.Error(w, "Invalid byte size", 422)
+		httpx.Error(w, "Invalid byte size", 422)
 		return
 	}
 	size, err := strconv.ParseInt(sizeText[:end], 10, 64)
 	if err != nil || size < 0 || size > MaxBody {
-		http.Error(w, "Request too large", 413)
+		httpx.Error(w, "Request too large", 413)
 		return
 	}
 	contentType, hasType := scalar("content_type")
@@ -114,10 +114,10 @@ func (s *Server) directUpload(w http.ResponseWriter, r *http.Request, _ database
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	json.NewEncoder(w).Encode(response)
 }
-func (s *Server) diskUpload(w http.ResponseWriter, r *http.Request, _ database.User) {
+func (s *Server) diskUpload(w httpx.ResponseWriter, r *httpx.Request, _ database.User) {
 	var token storage.DiskToken
 	if err := s.Storage.Verifier.Verify(r.PathValue("token"), "blob_token", s.DB.Now(), &token); err != nil {
-		http.NotFound(w, r)
+		httpx.NotFound(w, r)
 		return
 	}
 	ct, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -142,16 +142,16 @@ func (s *Server) diskUpload(w http.ResponseWriter, r *http.Request, _ database.U
 	}
 	w.WriteHeader(204)
 }
-func (s *Server) diskDownload(w http.ResponseWriter, r *http.Request) {
+func (s *Server) diskDownload(w httpx.ResponseWriter, r *httpx.Request) {
 	w.Header().Set("Cache-Control", "max-age=3600, public")
 	var key storage.DiskKey
 	if err := s.Storage.Verifier.Verify(r.PathValue("token"), "blob_key", s.DB.Now(), &key); err != nil {
-		http.NotFound(w, r)
+		httpx.NotFound(w, r)
 		return
 	}
 	path, err := s.Storage.Path(key.Key)
 	if err != nil {
-		http.NotFound(w, r)
+		httpx.NotFound(w, r)
 		return
 	}
 	ct := ""
@@ -160,10 +160,10 @@ func (s *Server) diskDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	s.serveStored(w, r, path, ct, key.Disposition, false)
 }
-func (s *Server) blobDownload(w http.ResponseWriter, r *http.Request) {
+func (s *Server) blobDownload(w httpx.ResponseWriter, r *httpx.Request) {
 	b, err := s.Storage.FindSigned(r.Context(), r.PathValue("token"))
 	if err != nil {
-		http.NotFound(w, r)
+		httpx.NotFound(w, r)
 		return
 	}
 	disposition := r.URL.Query().Get("disposition")
@@ -176,7 +176,7 @@ func (s *Server) blobDownload(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(r.URL.Path, "/proxy/") {
 		path, err := s.Storage.Path(b.Key)
 		if err != nil {
-			http.NotFound(w, r)
+			httpx.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Cache-Control", "max-age=3155695200, public, immutable")
@@ -189,15 +189,18 @@ func (s *Server) blobDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "max-age=300, private")
-	http.Redirect(w, r, s.origin(r)+path, 302)
+	httpx.Redirect(w, r, s.origin(r)+path, 302)
 }
-func (s *Server) serveStored(w http.ResponseWriter, r *http.Request, path, ct, disposition string, proxy bool) {
+func (s *Server) serveStored(w httpx.ResponseWriter, r *httpx.Request, path, ct, disposition string, proxy bool) {
 	file, err := os.Open(path)
 	if err != nil {
-		http.NotFound(w, r)
+		httpx.NotFound(w, r)
 		return
 	}
-	defer file.Close()
+	// A large file streams after this handler returns, so the server closes it.
+	if !httpx.DeferClose(w, file) {
+		defer file.Close()
+	}
 	stat, err := file.Stat()
 	if err != nil {
 		s.fail(w, err)
@@ -215,16 +218,16 @@ func (s *Server) serveStored(w http.ResponseWriter, r *http.Request, path, ct, d
 	if proxy {
 		modified = time.Time{}
 	}
-	http.ServeContent(w, r, stat.Name(), modified, file)
+	httpx.ServeContent(w, r, stat.Name(), modified, file)
 }
-func (s *Server) uploadAttachment(r *http.Request, field string) (storage.Blob, error) {
+func (s *Server) uploadAttachment(r *httpx.Request, field string) (storage.Blob, error) {
 	staged, err := s.stageAttachment(r, field)
 	if err != nil {
 		return storage.Blob{}, err
 	}
 	return staged.Save(r.Context())
 }
-func (s *Server) stageAttachment(r *http.Request, field string) (*storage.Staged, error) {
+func (s *Server) stageAttachment(r *httpx.Request, field string) (*storage.Staged, error) {
 	file, header, err := uploadedFile(r, field)
 	if err != nil {
 		return nil, err
@@ -239,7 +242,7 @@ func (s *Server) stageAttachment(r *http.Request, field string) (*storage.Staged
 	ct := storage.Identify(head, header.Filename, header.Header.Get("Content-Type"))
 	return s.Storage.StageFile(r.Context(), header.Filename, ct, io.MultiReader(strings.NewReader(string(head)), file))
 }
-func (s *Server) attachUploaded(r *http.Request, field, kind string, id int64, name string) error {
+func (s *Server) attachUploaded(r *httpx.Request, field, kind string, id int64, name string) error {
 	if r.MultipartForm == nil || len(r.MultipartForm.File[field]) == 0 {
 		return nil
 	}
@@ -250,8 +253,8 @@ func (s *Server) attachUploaded(r *http.Request, field, kind string, id int64, n
 	return s.Storage.Attach(r.Context(), b, kind, id, name)
 }
 
-func (s *Server) storageAuth(next func(http.ResponseWriter, *http.Request, database.User)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (s *Server) storageAuth(next func(httpx.ResponseWriter, *httpx.Request, database.User)) httpx.HandlerFunc {
+	return func(w httpx.ResponseWriter, r *httpx.Request) {
 		cookie, err := r.Cookie("session_token")
 		if err != nil {
 			w.WriteHeader(401)
@@ -271,15 +274,15 @@ func (s *Server) storageAuth(next func(http.ResponseWriter, *http.Request, datab
 	}
 }
 
-func (s *Server) representation(w http.ResponseWriter, r *http.Request) {
+func (s *Server) representation(w httpx.ResponseWriter, r *httpx.Request) {
 	b, err := s.Storage.FindSigned(r.Context(), r.PathValue("token"))
 	if err != nil {
-		http.NotFound(w, r)
+		httpx.NotFound(w, r)
 		return
 	}
 	v, err := s.Storage.DecodeVariation(r.PathValue("variation"))
 	if err != nil {
-		http.NotFound(w, r)
+		httpx.NotFound(w, r)
 		return
 	}
 	b, err = s.Storage.Representation(r.Context(), b, v)
@@ -303,10 +306,10 @@ func (s *Server) representation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "max-age=300, private")
-	http.Redirect(w, r, s.origin(r)+path, 302)
+	httpx.Redirect(w, r, s.origin(r)+path, 302)
 }
 
-func (s *Server) optionalUpload(r *http.Request, field string) (*storage.Staged, error) {
+func (s *Server) optionalUpload(r *httpx.Request, field string) (*storage.Staged, error) {
 	if r.MultipartForm == nil || len(r.MultipartForm.File[field]) == 0 {
 		return nil, nil
 	}

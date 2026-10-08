@@ -1,12 +1,11 @@
 package front
 
 import (
-	"bufio"
 	"compress/gzip"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"io"
 	"net"
-	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -105,7 +104,7 @@ func encoding(header string) string {
 	}
 	return ""
 }
-func addVary(h http.Header, name string) {
+func addVary(h *httpx.Header, name string) {
 	for _, line := range h.Values("Vary") {
 		for _, value := range strings.Split(line, ",") {
 			if strings.EqualFold(strings.TrimSpace(value), name) || strings.TrimSpace(value) == "*" {
@@ -121,8 +120,8 @@ func addVary(h http.Header, name string) {
 }
 
 type gzipResponse struct {
-	http.ResponseWriter
-	request  *http.Request
+	httpx.ResponseWriter
+	request  *httpx.Request
 	writer   *gzip.Writer
 	selected string
 	status   int
@@ -133,10 +132,15 @@ type gzipResponse struct {
 	cache    *gzipCache
 }
 
-func (w *gzipResponse) Unwrap() http.ResponseWriter { return w.ResponseWriter }
-func (w *gzipResponse) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+func (w *gzipResponse) Unwrap() httpx.ResponseWriter { return w.ResponseWriter }
+func (w *gzipResponse) Hijack(fn func(net.Conn)) error {
 	w.status = 101
-	return http.NewResponseController(w.ResponseWriter).Hijack()
+	return httpx.Hijack(w.ResponseWriter, fn)
+}
+
+// PassesThrough reports that bytes reach the client unchanged, so a file may stream past this writer.
+func (w *gzipResponse) PassesThrough() bool {
+	return w.status != 0 && !w.compress && !w.drop && !w.complete && w.writer == nil
 }
 func (w *gzipResponse) WriteHeader(status int) {
 	if w.status != 0 {
@@ -161,7 +165,7 @@ func (w *gzipResponse) WriteHeader(status int) {
 		h.Set("Content-Encoding", "gzip")
 		h.Del("Content-Length")
 		w.compress = true
-		if stamp, err := http.ParseTime(h.Get("Last-Modified")); err == nil && stamp.Unix() > 0 {
+		if stamp, err := httpx.ParseTime(h.Get("Last-Modified")); err == nil && stamp.Unix() > 0 {
 			w.mtime = uint32(stamp.Unix())
 		}
 	}
@@ -224,7 +228,7 @@ func (w *gzipResponse) WriteBody(parts []responsebody.Part) (int, error) {
 func (w *gzipResponse) Write(p []byte) (int, error) {
 	if w.status == 0 {
 		if w.Header().Get("Content-Type") == "" {
-			w.Header().Set("Content-Type", http.DetectContentType(p))
+			w.Header().Set("Content-Type", httpx.DetectContentType(p))
 		}
 		w.WriteHeader(200)
 	}
@@ -243,7 +247,7 @@ func (w *gzipResponse) Write(p []byte) (int, error) {
 func (w *gzipResponse) WriteString(value string) (int, error) {
 	if w.status == 0 {
 		if w.Header().Get("Content-Type") == "" {
-			w.Header().Set("Content-Type", http.DetectContentType([]byte(value[:min(len(value), 512)])))
+			w.Header().Set("Content-Type", httpx.DetectContentType([]byte(value[:min(len(value), 512)])))
 		}
 		w.WriteHeader(200)
 	}
@@ -264,11 +268,11 @@ func (w *gzipResponse) Flush() {
 	if w.writer != nil {
 		w.writer.Flush()
 	}
-	http.NewResponseController(w.ResponseWriter).Flush()
+	httpx.Flush(w.ResponseWriter)
 }
-func Deflate(next http.Handler) http.Handler {
+func Deflate(next httpx.Handler) httpx.Handler {
 	cache := newGzipCache(gzipCacheBytes)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
 		if r.Header.Get("Upgrade") != "" {
 			next.ServeHTTP(w, r)
 			return

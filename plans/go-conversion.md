@@ -5,7 +5,7 @@ Pinned Rails: `90b330024dec3e757c79b6a7e6568f93da8e3148`.
 
 The full application is implemented and independently runnable. The implementation uses the standard
 library for HTTP/routing, templates, SQL access and process lifecycle, with focused libraries for
-SQLite, WebSockets, bcrypt/ACME, HTTP/2 and HTML parsing. It preserves the original frontend and
+SQLite, WebSockets, bcrypt/ACME, fasthttp and HTML parsing. It preserves the original frontend and
 existing database/storage/cookie formats. The Rust and Rails references are unchanged.
 
 ## Coverage
@@ -20,7 +20,7 @@ existing database/storage/cookie formats. The Rust and Rails references are unch
 | Media | Original signed URLs, layout, checksums, variants, previews, metadata, MIME detection; pinned-toolchain byte goldens and upload-to-real-thumbnail comparison |
 | Realtime | Action Cable subscriptions, heartbeats, message/boost/Turbo streams, presence, typing, read/unread, room and session authorization/revocation, bounded queues and compression |
 | Integrations/jobs | Bounded queues, Web Push/VAPID, webhook behavior, Open Graph, cleanup; reference vectors and local delivery tests |
-| Operations | Production non-root image, HTTP/2/TLS/ACME, H2C, gzip/zstd/jitter, response cache, graceful shutdown, live backups and offline ONCE restore |
+| Operations | Production non-root image, fasthttp HTTP/1.1 with TLS/ACME (no HTTP/2 or H2C), gzip/zstd/jitter, response cache, graceful shutdown, live backups and offline ONCE restore |
 | Performance | Identical seed, CPU affinity, alternating repetitions, validated HTTP/write/Cable/media contracts; raw records under bench/results/ |
 
 [route-coverage.json](route-coverage.json) records implemented routes and the deliberately preserved

@@ -4,10 +4,14 @@ Port of the Rust Campfire in `reference/`, pinned as a submodule. The Rails sour
 `reference/reference/`. Preserve the SQLite schema, storage layout, cookies, frontend,
 and behavior of the Rust app. Record intentional differences in README.md.
 
-Use the Go standard library first: net/http, html/template, database/sql, crypto,
-encoding/json, testing, and embed. No web framework, ORM, dependency injection framework,
-or JavaScript build framework. Small protocol/algorithm libraries are appropriate where
-stdlib has no implementation (SQLite, bcrypt, WebSockets, HTML parsing).
+Use the Go standard library first: html/template, database/sql, crypto, encoding/json,
+testing, and embed. HTTP serving is fasthttp, wrapped by `internal/httpx`, which keeps the
+net/http handler shape (ResponseWriter, Request, middleware); new server code uses httpx, not
+net/http. net/http remains only for value types and pure helpers re-exported by httpx, the
+outbound clients in `internal/integrations`, and tests that act as clients. No web framework,
+ORM, dependency injection framework, or JavaScript build framework. Small protocol/algorithm
+libraries are appropriate where stdlib has no implementation (SQLite, bcrypt, WebSockets, HTML
+parsing, HTTP serving).
 
 Do not edit reference/. Port-owned frontend overrides go in assets/overrides/.
 Tests live beside code. Reuse reference/vectors and the reference parity seed.

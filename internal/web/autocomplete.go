@@ -3,8 +3,8 @@ package web
 import (
 	"fmt"
 	"github.com/basecamp/once-campfire-go/internal/httpcompat"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"html/template"
-	"net/http"
 	"strconv"
 	"strings"
 
@@ -12,13 +12,13 @@ import (
 	"github.com/basecamp/once-campfire-go/internal/richtext"
 )
 
-func (s *Server) autocomplete(w http.ResponseWriter, r *http.Request, u database.User) {
+func (s *Server) autocomplete(w httpx.ResponseWriter, r *httpx.Request, u database.User) {
 	room := int64(0)
 	if raw := r.Form.Get("room_id"); strings.TrimSpace(raw) != "" {
 		var err error
 		room, err = strconv.ParseInt(raw, 10, 64)
 		if err != nil {
-			http.NotFound(w, r)
+			httpx.NotFound(w, r)
 			return
 		}
 		if _, err = s.DB.Room(r.Context(), u.ID, room); err != nil {
@@ -83,7 +83,7 @@ func (s *Server) autocomplete(w http.ResponseWriter, r *http.Request, u database
 		fmt.Fprint(w, markup)
 	}
 }
-func wantsJSON(r *http.Request) bool {
+func wantsJSON(r *httpx.Request) bool {
 	format, _ := httpcompat.Negotiate(formatInput(r), "html", "json")
 	return format == "json"
 }

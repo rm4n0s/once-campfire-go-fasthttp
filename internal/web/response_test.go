@@ -1,15 +1,15 @@
 package web
 
 import (
-	"net/http"
-	"net/http/httptest"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"testing"
 )
 
 func TestCompletedResponseValidators(t *testing.T) {
 	for _, method := range []string{"GET", "HEAD"} {
-		request := httptest.NewRequest(method, "/up", nil)
-		first := httptest.NewRecorder()
+		request := httpxtest.NewRequest(method, "/up", nil)
+		first := httpxtest.NewRecorder()
 		writer := &responseBuffer{ResponseWriter: first}
 		writer.Write([]byte("<p>complete"))
 		writer.Write([]byte(" body</p>"))
@@ -21,14 +21,14 @@ func TestCompletedResponseValidators(t *testing.T) {
 			t.Fatal("HEAD body", first.Body.String())
 		}
 		request.Header.Set("If-None-Match", first.Header().Get("ETag"))
-		second := httptest.NewRecorder()
+		second := httpxtest.NewRecorder()
 		writer = &responseBuffer{ResponseWriter: second}
 		writer.Write([]byte("<p>complete body</p>"))
 		writer.finish(request)
-		if second.Code != http.StatusNotModified || second.Body.Len() != 0 {
+		if second.Code != httpx.StatusNotModified || second.Body.Len() != 0 {
 			t.Fatal(second.Code, second.Body.String())
 		}
-		changed := httptest.NewRecorder()
+		changed := httpxtest.NewRecorder()
 		writer = &responseBuffer{ResponseWriter: changed}
 		writer.Write([]byte("changed"))
 		writer.finish(request)

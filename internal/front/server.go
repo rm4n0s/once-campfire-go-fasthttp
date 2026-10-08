@@ -13,36 +13,32 @@ import (
 	"strings"
 	"time"
 
+	"github.com/basecamp/once-campfire-go/internal/httpx"
+	"github.com/valyala/fasthttp/fasthttpadaptor"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 )
 
-func (c Config) server(address string, handler http.Handler) *http.Server {
-	headerTimeout := c.ReadTimeout
-	if c.IdleTimeout > 0 && (headerTimeout == 0 || c.IdleTimeout < headerTimeout) {
-		headerTimeout = c.IdleTimeout
-	}
-	protocols := new(http.Protocols)
-	protocols.SetHTTP1(true)
-	protocols.SetHTTP2(true)
-	protocols.SetUnencryptedHTTP2(c.H2C)
-	return &http.Server{Addr: address, Handler: handler, ReadHeaderTimeout: headerTimeout, ReadTimeout: c.ReadTimeout, WriteTimeout: c.WriteTimeout, IdleTimeout: c.IdleTimeout, MaxHeaderBytes: 64 << 10, Protocols: protocols}
+// server builds a fasthttp listener. fasthttp speaks HTTP/1.1 only: H2 and H2C
+// are not offered, and TLS negotiates http/1.1 (plus the ACME challenge protocol).
+func (c Config) server(handler httpx.Handler) *httpx.Server {
+	return &httpx.Server{Handler: handler, ReadTimeout: c.ReadTimeout, WriteTimeout: c.WriteTimeout, IdleTimeout: c.IdleTimeout, MaxHeaderBytes: 64 << 10}
 }
-func bodyLimit(next http.Handler, limit int64) http.Handler {
+func bodyLimit(next httpx.Handler, limit int64) httpx.Handler {
 	if limit <= 0 {
 		return next
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
 		if r.ContentLength > limit {
-			http.Error(w, "Request Entity Too Large", 413)
+			httpx.Error(w, "Request Entity Too Large", 413)
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, limit)
+		r.Body = httpx.MaxBytesReader(r.Body, limit)
 		next.ServeHTTP(w, r)
 	})
 }
-func forward(next http.Handler, c Config) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func forward(next httpx.Handler, c Config) httpx.Handler {
+	return httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
 		r = r.Clone(r.Context())
 		host, _, _ := net.SplitHostPort(r.RemoteAddr)
 		if !c.ForwardHeaders {
@@ -76,35 +72,35 @@ func forward(next http.Handler, c Config) http.Handler {
 
 // Serve hosts the application listener and the public HTTP/TLS listeners in one
 // process. The ACME manager is Go's autocert, also used by Thruster.
-func Serve(ctx context.Context, c Config, app http.Handler) error {
+func Serve(ctx context.Context, c Config, app httpx.Handler) error {
 	app = bodyLimit(Deflate(app), c.MaxRequestBody)
 	public := forward(PublicCompression(NewCache(c.CacheSize, c.MaxCacheItemSize).Handler(app), c), c)
-	var servers []*http.Server
-	var listeners []net.Listener
-	add := func(server *http.Server) error {
-		listener, err := net.Listen("tcp", server.Addr)
+	type listening struct {
+		server   *httpx.Server
+		listener net.Listener
+		tls      *tls.Config
+	}
+	var servers []listening
+	add := func(address string, server *httpx.Server, config *tls.Config) error {
+		listener, err := net.Listen("tcp", address)
 		if err != nil {
 			return err
 		}
-		servers = append(servers, server)
-		listeners = append(listeners, listener)
+		servers = append(servers, listening{server, listener, config})
 		return nil
 	}
 	defer func() {
-		for _, listener := range listeners {
-			listener.Close()
+		for _, s := range servers {
+			s.listener.Close()
 		}
 	}()
 	if c.TargetPort != c.HTTPPort && (len(c.Domains) == 0 || c.TargetPort != c.HTTPSPort) {
-		target := c.server(net.JoinHostPort(c.TargetBind, strconv.Itoa(c.TargetPort)), app)
-		target.Protocols.SetHTTP2(false)
-		target.Protocols.SetUnencryptedHTTP2(false)
-		if err := add(target); err != nil {
+		if err := add(net.JoinHostPort(c.TargetBind, strconv.Itoa(c.TargetPort)), c.server(app), nil); err != nil {
 			return err
 		}
 	}
 	if len(c.Domains) == 0 {
-		if err := add(c.server(":"+strconv.Itoa(c.HTTPPort), public)); err != nil {
+		if err := add(":"+strconv.Itoa(c.HTTPPort), c.server(public), nil); err != nil {
 			return err
 		}
 	} else {
@@ -116,12 +112,14 @@ func Serve(ctx context.Context, c Config, app http.Handler) error {
 			}
 			manager.ExternalAccountBinding = &acme.ExternalAccountBinding{KID: c.EABKeyID, Key: key}
 		}
-		tlsServer := c.server(":"+strconv.Itoa(c.HTTPSPort), public)
-		tlsServer.TLSConfig = manager.TLSConfig()
-		tlsServer.TLSConfig.MinVersion = tls.VersionTLS12
-		if err := add(tlsServer); err != nil {
+		config := manager.TLSConfig()
+		config.MinVersion = tls.VersionTLS12
+		config.NextProtos = []string{"http/1.1", acme.ALPNProto}
+		if err := add(":"+strconv.Itoa(c.HTTPSPort), c.server(public), config); err != nil {
 			return err
 		}
+		// autocert answers HTTP-01 challenges with a net/http handler; the
+		// redirect is its fallback for every other request.
 		redirect := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			host := r.Host
 			if h, _, err := net.SplitHostPort(host); err == nil {
@@ -132,19 +130,20 @@ func Serve(ctx context.Context, c Config, app http.Handler) error {
 			}
 			http.Redirect(w, r, "https://"+host+r.URL.RequestURI(), 301)
 		})
-		if err := add(c.server(":"+strconv.Itoa(c.HTTPPort), manager.HTTPHandler(redirect))); err != nil {
+		redirector := c.server(nil)
+		redirector.Raw = fasthttpadaptor.NewFastHTTPHandler(manager.HTTPHandler(redirect))
+		if err := add(":"+strconv.Itoa(c.HTTPPort), redirector, nil); err != nil {
 			return err
 		}
 	}
 	results := make(chan error, len(servers))
-	for i, server := range servers {
-		listener := listeners[i]
-		slog.Info("listening", "address", listener.Addr(), "tls", server.TLSConfig != nil)
+	for _, s := range servers {
+		slog.Info("listening", "address", s.listener.Addr(), "tls", s.tls != nil)
 		go func() {
-			if server.TLSConfig != nil {
-				results <- server.ServeTLS(listener, "", "")
+			if s.tls != nil {
+				results <- s.server.ServeTLS(s.listener, s.tls)
 			} else {
-				results <- server.Serve(listener)
+				results <- s.server.Serve(s.listener)
 			}
 		}()
 	}
@@ -156,11 +155,11 @@ func Serve(ctx context.Context, c Config, app http.Handler) error {
 	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	stopped := make(chan error, len(servers))
-	for _, server := range servers {
+	for _, s := range servers {
 		go func() {
-			err := server.Shutdown(shutdown)
+			err := s.server.Shutdown(shutdown)
 			if err != nil {
-				server.Close()
+				s.server.Close()
 			}
 			stopped <- err
 		}()
@@ -168,7 +167,7 @@ func Serve(ctx context.Context, c Config, app http.Handler) error {
 	for range servers {
 		result = errors.Join(result, <-stopped)
 	}
-	if errors.Is(result, http.ErrServerClosed) {
+	if errors.Is(result, httpx.ErrServerClosed) {
 		return nil
 	}
 	return result

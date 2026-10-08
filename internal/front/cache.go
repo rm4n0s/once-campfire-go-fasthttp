@@ -3,7 +3,7 @@ package front
 import (
 	"bytes"
 	"container/list"
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"regexp"
 	"sort"
 	"strconv"
@@ -14,7 +14,7 @@ import (
 
 type cacheEntry struct {
 	key     string
-	header  http.Header
+	header  *httpx.Header
 	body    []byte
 	status  int
 	variant map[string]string
@@ -37,7 +37,7 @@ var noCacheDirective = regexp.MustCompile(`\bno-cache\b`)
 var sharedMaxAge = regexp.MustCompile(`\bs-max-age=(\d+)\b`)
 var maxAge = regexp.MustCompile(`\bmax-age=(\d+)\b`)
 
-func lifetime(status int, h http.Header) time.Duration {
+func lifetime(status int, h *httpx.Header) time.Duration {
 	if status < 200 || status > 399 || status == 304 || strings.Contains(h.Get("Vary"), "*") {
 		return 0
 	}
@@ -58,10 +58,10 @@ func lifetime(status int, h http.Header) time.Duration {
 	}
 	return time.Duration(seconds) * time.Second
 }
-func baseKey(r *http.Request) string {
+func baseKey(r *httpx.Request) string {
 	return r.Method + "\n" + r.URL.EscapedPath() + "\n" + r.URL.RawQuery + "\n" + r.Host
 }
-func (c *Cache) get(key string, r *http.Request) *cacheEntry {
+func (c *Cache) get(key string, r *httpx.Request) *cacheEntry {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	element := c.entries[key]
@@ -105,16 +105,16 @@ func (c *Cache) put(entry *cacheEntry) {
 
 // recordResponse streams through and keeps only a bounded copy of cacheable bodies.
 type recordResponse struct {
-	http.ResponseWriter
+	httpx.ResponseWriter
 	status   int
-	header   http.Header
+	header   *httpx.Header
 	body     bytes.Buffer
 	max      int64
 	ttl      time.Duration
 	overflow bool
 }
 
-func (w *recordResponse) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+func (w *recordResponse) Unwrap() httpx.ResponseWriter { return w.ResponseWriter }
 func (w *recordResponse) WriteHeader(status int) {
 	if w.status != 0 {
 		return
@@ -149,10 +149,13 @@ func (w *recordResponse) Flush() {
 	if w.status == 0 {
 		w.WriteHeader(200)
 	}
-	http.NewResponseController(w.ResponseWriter).Flush()
+	httpx.Flush(w.ResponseWriter)
 }
-func (c *Cache) Handler(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+// PassesThrough lets a large body stream past the recorder once it has overflowed or is uncacheable.
+func (w *recordResponse) PassesThrough() bool { return w.status != 0 && (w.ttl <= 0 || w.overflow) }
+func (c *Cache) Handler(next httpx.Handler) httpx.Handler {
+	return httpx.HandlerFunc(func(w httpx.ResponseWriter, r *httpx.Request) {
 		eligible := (r.Method == "GET" || r.Method == "HEAD") && r.Header.Get("Upgrade") == "" && r.Header.Get("Range") == "" && len(r.URL.RequestURI()) <= 2048
 		if !eligible || c.capacity <= 0 || c.maxItem <= 0 {
 			w.Header().Set("X-Cache", "bypass")
@@ -161,9 +164,7 @@ func (c *Cache) Handler(next http.Handler) http.Handler {
 		}
 		key := baseKey(r)
 		if entry := c.get(key, r); entry != nil {
-			for name, values := range entry.header {
-				w.Header()[name] = append([]string(nil), values...)
-			}
+			w.Header().Replace(entry.header)
 			w.Header().Set("X-Cache", "hit")
 			if etag := entry.header.Get("ETag"); etag != "" {
 				for _, candidate := range strings.Split(r.Header.Get("If-None-Match"), ",") {
@@ -200,11 +201,7 @@ func (c *Cache) Handler(next http.Handler) http.Handler {
 				size += int64(len(name) + len(variant[name]))
 			}
 		}
-		for name, values := range capture.header {
-			for _, value := range values {
-				size += int64(len(name) + len(value))
-			}
-		}
+		capture.header.Each(func(name, value string) { size += int64(len(name) + len(value)) })
 		c.put(&cacheEntry{key: key, header: capture.header, body: bytes.Clone(capture.body.Bytes()), status: capture.status, variant: variant, expires: time.Now().Add(capture.ttl), size: size})
 	})
 }

@@ -2,7 +2,7 @@ package web
 
 import (
 	"context"
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"sync"
 
 	"github.com/basecamp/once-campfire-go/internal/useragent"
@@ -25,7 +25,7 @@ func requestMetadata(ctx context.Context) *requestInfo {
 	return info
 }
 
-func requestAgent(r *http.Request) useragent.Agent {
+func requestAgent(r *httpx.Request) useragent.Agent {
 	if info := requestMetadata(r.Context()); info != nil {
 		info.agentOnce.Do(func() {
 			agent := useragent.Parse(r.UserAgent())

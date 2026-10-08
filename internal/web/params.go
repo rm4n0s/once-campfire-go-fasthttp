@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"io"
 	"mime"
-	"net/http"
 	"net/url"
 	"strings"
 )
@@ -17,7 +17,7 @@ type nullParamsKey struct{}
 
 // Retain the raw body for direct uploads and push subscriptions, whose handlers
 // also consume JSON. Query parameters take precedence, as in Action Dispatch.
-func parseJSONParams(r *http.Request) error {
+func parseJSONParams(r *httpx.Request) error {
 	media, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if media != "application/json" {
 		return nil
@@ -91,13 +91,13 @@ func parseJSONParams(r *http.Request) error {
 	return nil
 }
 
-func nullParam(r *http.Request, key string) bool {
+func nullParam(r *httpx.Request, key string) bool {
 	nulls, _ := r.Context().Value(nullParamsKey{}).(map[string]bool)
 	return nulls[key]
 }
 
 // Rack overwrites repeated scalar keys; [] keys retain all values.
-func normalizeScalarParams(r *http.Request) {
+func normalizeScalarParams(r *httpx.Request) {
 	for _, values := range []url.Values{r.Form, r.PostForm} {
 		for key, items := range values {
 			if len(items) > 1 && !strings.HasSuffix(key, "[]") {

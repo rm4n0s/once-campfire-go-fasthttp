@@ -3,10 +3,10 @@ package web
 import (
 	"context"
 	"errors"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"io"
 	"mime"
 	"mime/multipart"
-	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -16,7 +16,7 @@ const maxMultipartBody int64 = 10 << 30
 
 type uploadedPathsKey struct{}
 
-func multipartBoundary(r *http.Request) string {
+func multipartBoundary(r *httpx.Request) string {
 	kind, parameters, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	switch kind {
 	case "multipart/form-data", "multipart/related", "multipart/mixed":
@@ -27,7 +27,7 @@ func multipartBoundary(r *http.Request) string {
 
 // File parts stream to disk. Only text fields count against the 16 MiB memory
 // limit; the reference permits up to 128 files and 4096 parts in a 10 GiB body.
-func parseMultipart(r *http.Request, boundary string) (cleanup func(), err error) {
+func parseMultipart(r *httpx.Request, boundary string) (cleanup func(), err error) {
 	paths := map[*multipart.FileHeader]string{}
 	cleanup = func() {
 		for _, path := range paths {
@@ -92,7 +92,7 @@ func parseMultipart(r *http.Request, boundary string) (cleanup func(), err error
 			}
 			textBytes += int64(len(data))
 			if textBytes > MaxBody {
-				return cleanup, &http.MaxBytesError{Limit: MaxBody}
+				return cleanup, &httpx.MaxBytesError{Limit: MaxBody}
 			}
 			form.Value[name] = append(form.Value[name], string(data))
 		}
@@ -115,11 +115,11 @@ func parseMultipart(r *http.Request, boundary string) (cleanup func(), err error
 	return cleanup, nil
 }
 
-func uploadedFile(r *http.Request, field string) (io.ReadCloser, *multipart.FileHeader, error) {
+func uploadedFile(r *httpx.Request, field string) (io.ReadCloser, *multipart.FileHeader, error) {
 	if paths, ok := r.Context().Value(uploadedPathsKey{}).(map[*multipart.FileHeader]string); ok {
 		files := r.MultipartForm.File[field]
 		if len(files) == 0 {
-			return nil, nil, http.ErrMissingFile
+			return nil, nil, httpx.ErrMissingFile
 		}
 		header := files[len(files)-1]
 		file, err := os.Open(paths[header])

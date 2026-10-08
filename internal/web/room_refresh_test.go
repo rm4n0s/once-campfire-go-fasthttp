@@ -3,7 +3,7 @@ package web
 import (
 	"context"
 	"fmt"
-	"net/http/httptest"
+	"github.com/basecamp/once-campfire-go/internal/httpx/httpxtest"
 	"regexp"
 	"strconv"
 	"strings"
@@ -46,11 +46,11 @@ func TestRoomRefreshCursorUsesQueriedRoomVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest("GET", fmt.Sprintf("/rooms/%d", roomID), nil)
+	request := httpxtest.NewRequest("GET", fmt.Sprintf("/rooms/%d", roomID), nil)
 	session := &browserSession{server: app, request: request}
 	request = request.WithContext(context.WithValue(request.Context(), browserSessionKey{}, session))
-	render := func() *httptest.ResponseRecorder {
-		response := httptest.NewRecorder()
+	render := func() *httpxtest.Recorder {
+		response := httpxtest.NewRecorder()
 		app.render(response, request, "room", 200, page{User: user, Room: room, messageRecords: messages})
 		return response
 	}

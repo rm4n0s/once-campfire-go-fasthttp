@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"io"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -19,7 +19,7 @@ import (
 
 var botRoute = regexp.MustCompile(`^/rooms/([^/]+)/([^/]+)/messages(?:/([^/]+))?(?:/boosts(?:/([^/]+))?)?$`)
 
-func (s *Server) botRequest(w http.ResponseWriter, r *http.Request) bool {
+func (s *Server) botRequest(w httpx.ResponseWriter, r *httpx.Request) bool {
 	values := botRoute.FindStringSubmatch(r.URL.Path)
 	if values == nil {
 		return false
@@ -53,7 +53,7 @@ func (s *Server) botRequest(w http.ResponseWriter, r *http.Request) bool {
 			return true
 		}
 	} else if r.Method != "GET" && r.Method != "HEAD" && !s.browserWriteAllowed(r) {
-		http.Error(w, "Invalid request origin", 422)
+		httpx.Error(w, "Invalid request origin", 422)
 		return true
 	}
 	if s.blockBrowser(w, r) {
@@ -61,33 +61,33 @@ func (s *Server) botRequest(w http.ResponseWriter, r *http.Request) bool {
 	}
 	room, err := s.DB.Room(r.Context(), user.ID, roomID(r))
 	if err != nil {
-		http.NotFound(w, r)
+		httpx.NotFound(w, r)
 		return true
 	}
 	var raw []byte
 	if boundary := multipartBoundary(r); boundary != "" {
-		r.Body = http.MaxBytesReader(w, r.Body, maxMultipartBody)
+		r.Body = httpx.MaxBytesReader(r.Body, maxMultipartBody)
 		cleanup, e := parseMultipart(r, boundary)
 		defer cleanup()
 		if e != nil {
-			var limit *http.MaxBytesError
+			var limit *httpx.MaxBytesError
 			if errors.As(e, &limit) {
-				http.Error(w, "Request too large", 413)
+				httpx.Error(w, "Request too large", 413)
 				return true
 			}
-			http.Error(w, "Invalid upload", 400)
+			httpx.Error(w, "Invalid upload", 400)
 			return true
 		}
 	} else {
-		r.Body = http.MaxBytesReader(w, r.Body, MaxBody)
+		r.Body = httpx.MaxBytesReader(r.Body, MaxBody)
 		raw, err = io.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, "Request too large", 413)
+			httpx.Error(w, "Request too large", 413)
 			return true
 		}
 		r.Body = io.NopCloser(bytes.NewReader(raw))
 		if err := r.ParseForm(); err != nil {
-			http.Error(w, "Invalid form", 400)
+			httpx.Error(w, "Invalid form", 400)
 			return true
 		}
 	}
@@ -152,7 +152,7 @@ func (s *Server) botRequest(w http.ResponseWriter, r *http.Request) bool {
 				return true
 			}
 		} else if r.Form.Get("attachment") != "" {
-			http.Error(w, "Invalid attachment", 500)
+			httpx.Error(w, "Invalid attachment", 500)
 			return true
 		} else if strings.TrimSpace(string(raw)) == "" {
 			w.WriteHeader(422)
@@ -229,7 +229,7 @@ func (s *Server) botRequest(w http.ResponseWriter, r *http.Request) bool {
 	}
 	return true
 }
-func (s *Server) botBoost(w http.ResponseWriter, r *http.Request, u database.User, room database.Room, body string) {
+func (s *Server) botBoost(w httpx.ResponseWriter, r *httpx.Request, u database.User, room database.Room, body string) {
 	message, err := s.findMessage(r, u, false)
 	if err != nil {
 		s.fail(w, err)
@@ -246,7 +246,7 @@ func (s *Server) botBoost(w http.ResponseWriter, r *http.Request, u database.Use
 		return
 	}
 	if r.Method != "POST" {
-		http.NotFound(w, r)
+		httpx.NotFound(w, r)
 		return
 	}
 	if strings.TrimSpace(body) == "" {
@@ -300,7 +300,7 @@ type messageJSON struct {
 }
 
 func jsonTime(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z") }
-func (s *Server) userJSON(r *http.Request, u database.User) userJSON {
+func (s *Server) userJSON(r *httpx.Request, u database.User) userJSON {
 	role := "member"
 	if u.Role == 1 {
 		role = "administrator"
@@ -309,7 +309,7 @@ func (s *Server) userJSON(r *http.Request, u database.User) userJSON {
 	}
 	return userJSON{u.ID, u.Name, role, s.origin(r) + "/users/" + s.Secrets.SignedID("User", u.ID, "avatar", time.Time{}) + "/avatar?v=" + u.UpdatedAt.UTC().Format("20060102150405")}
 }
-func (s *Server) messageJSON(r *http.Request, m database.Message) (messageJSON, error) {
+func (s *Server) messageJSON(r *httpx.Request, m database.Message) (messageJSON, error) {
 	result := messageJSON{ID: m.ID, CreatedAt: jsonTime(m.CreatedAt), URL: fmt.Sprintf("%s/rooms/%d/messages/%d", s.origin(r), m.RoomID, m.ID)}
 	rich := s.richText(r.Context(), m.Body)
 	plain := rich.Plain
@@ -328,10 +328,10 @@ func (s *Server) messageJSON(r *http.Request, m database.Message) (messageJSON, 
 	result.Creator = s.userJSON(r, user)
 	return result, nil
 }
-func writeJSON(w http.ResponseWriter, status int, value any) {
+func writeJSON(w httpx.ResponseWriter, status int, value any) {
 	data, err := json.Marshal(value)
 	if err != nil {
-		http.Error(w, "Internal server error", 500)
+		httpx.Error(w, "Internal server error", 500)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

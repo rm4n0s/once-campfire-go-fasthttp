@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 
 	"github.com/basecamp/once-campfire-go/internal/database"
 	"github.com/basecamp/once-campfire-go/internal/storage"
@@ -12,7 +12,7 @@ import (
 
 // Mirrors the pinned Rust attachment Assignment: omitted, deleted, uploaded, or
 // invalid. Profile params.compact drops nil; account and bot params retain it.
-func recordAttachment(r *http.Request, field string, upload *storage.Staged, compact bool) database.BlobStager {
+func recordAttachment(r *httpx.Request, field string, upload *storage.Staged, compact bool) database.BlobStager {
 	if upload != nil {
 		return upload
 	}

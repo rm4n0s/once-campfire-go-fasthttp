@@ -4,14 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"net/http"
+	"github.com/basecamp/once-campfire-go/internal/httpx"
 	"strings"
 
 	"github.com/basecamp/once-campfire-go/internal/database"
 	"github.com/basecamp/once-campfire-go/internal/storage"
 )
 
-func requireMessage(w http.ResponseWriter, r *http.Request) bool {
+func requireMessage(w httpx.ResponseWriter, r *httpx.Request) bool {
 	for key := range r.Form {
 		if strings.HasPrefix(key, "message[") {
 			return true
@@ -24,12 +24,12 @@ func requireMessage(w http.ResponseWriter, r *http.Request) bool {
 			}
 		}
 	}
-	http.Error(w, "Missing message parameter", 400)
+	httpx.Error(w, "Missing message parameter", 400)
 	return false
 }
 
 // Matches MessagesController#update and Messages::ByBotsController#message_params.
-func (s *Server) updateMessageAttributes(r *http.Request, user database.User, message database.Message, bodyField, attachmentField string, rawBody *string) (database.Message, error) {
+func (s *Server) updateMessageAttributes(r *httpx.Request, user database.User, message database.Message, bodyField, attachmentField string, rawBody *string) (database.Message, error) {
 	var body *string
 	var plain string
 	if rawBody != nil || r.Form.Has(bodyField) && !nullParam(r, bodyField) {
